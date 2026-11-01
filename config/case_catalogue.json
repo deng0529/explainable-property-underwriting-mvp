@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "case_id": "NB-2026-001",
+      "company_name": "Northbridge Furniture Storage Ltd",
+      "submission_version": "1.0",
+      "status": "Awaiting document review",
+      "document_path": "data/submissions/NB-2026-001/Northbridge_Broker_Submission.pdf",
+      "expected_pages": 4,
+      "prepared_summary": "Owner-occupied furniture warehouse in Greater Manchester, England · 1,200 m² · Buildings £2 million · Maximum stock £600,000",
+      "summary_reference": "Prepared from submission pages 1–2.",
+      "basic_information": {
+        "Company": [
+          {
+            "label": "Proposer",
+            "value": "Northbridge Furniture Storage Ltd; private limited company, established 2018.",
+            "page": 1,
+            "section": "§1"
+          },
+          {
+            "label": "Activity",
+            "value": "Wholesale distribution and temporary storage of new domestic furniture; no manufacture, upholstery, spray painting or public showroom.",
+            "page": 1,
+            "section": "§1"
+          },
+          {
+            "label": "Business size",
+            "value": "14 employees; annual turnover £3.2 million.",
+            "page": 1,
+            "section": "§1"
+          },
+          {
+            "label": "Registration identifier",
+            "value": "Intentionally omitted for this synthetic case.",
+            "page": 1,
+            "section": "§1"
+          }
+        ],
+        "Premises": [
+          {
+            "label": "Location",
+            "value": "Unit 4, Example Distribution Park, Greater Manchester, England; fictional address, no valid postcode supplied.",
+            "page": 1,
+            "section": "§1"
+          },
+          {
+            "label": "Occupation",
+            "value": "Company owns and occupies the whole premises; no tenants, shared occupiers or vacant areas.",
+            "page": 1,
+            "section": "§1"
+          },
+          {
+            "label": "Area and age",
+            "value": "1,200 m² total: 1,000 m² warehouse (2004) and 200 m² extension (2019); includes 100 m² office area.",
+            "page": 2,
+            "section": "§3"
+          },
+          {
+            "label": "Construction",
+            "value": "Steel frame, brick/block lower walls, profiled metal upper walls and metal roof; extension composite-panel core specification not supplied.",
+            "page": 2,
+            "section": "§3"
+          }
+        ],
+        "Requested cover": [
+          {
+            "label": "Period",
+            "value": "1 December 2026 to 30 November 2027.",
+            "page": 1,
+            "section": "Heading"
+          },
+          {
+            "label": "Cover request",
+            "value": "Property damage, theft and business interruption on an all-risks basis, subject to insurer terms; no cover bound.",
+            "page": 1,
+            "section": "§1"
+          },
+          {
+            "label": "Extensions",
+            "value": "Accidental damage and theft requested; flood, storm, escape of water and subsidence for consideration. Terrorism quotation requested separately.",
+            "page": 2,
+            "section": "§4"
+          }
+        ],
+        "Declared values": [
+          {
+            "label": "Buildings",
+            "value": "£2,000,000 requested reinstatement sum including extension; client estimate, no recent professional assessment supplied.",
+            "page": 2,
+            "section": "§4"
+          },
+          {
+            "label": "General contents",
+            "value": "£150,000 excluding stock and computers.",
+            "page": 2,
+            "section": "§4"
+          },
+          {
+            "label": "Computers",
+            "value": "£15,000 separately identified.",
+            "page": 2,
+            "section": "§4"
+          },
+          {
+            "label": "Stock",
+            "value": "£600,000 maximum anticipated including seasonal peaks; indicative current holding £450,000.",
+            "page": 2,
+            "section": "§4"
+          }
+        ],
+        "Business interruption": [
+          {
+            "label": "Sum and indemnity period",
+            "value": "£1,200,000 estimated insurance gross profit; 24-month maximum indemnity period.",
+            "page": 2,
+            "section": "§4"
+          },
+          {
+            "label": "Calculation basis",
+            "value": "Calculation and uninsured working expenses not supplied.",
+            "page": 2,
+            "section": "§4"
+          },
+          {
+            "label": "Continuity",
+            "value": "One supplier accounts for approximately 35% of purchases; replacement stock lead time six to eight weeks; no alternative warehouse contracted.",
+            "page": 2,
+            "section": "§5"
+          }
+        ],
+        "History": [
+          {
+            "label": "June 2024 loss",
+            "value": "Client reports toilet supply-pipe escape of water; £4,800 paid, no outstanding reserve reported; pipe section replaced and isolation valve labelled.",
+            "page": 4,
+            "section": "§11"
+          },
+          {
+            "label": "Other losses",
+            "value": "Client reports no other insured or uninsured property losses in the five years to 22 October 2026.",
+            "page": 4,
+            "section": "§11"
+          },
+          {
+            "label": "Previous insurance",
+            "value": "Property and business interruption cover reported until 30 November 2026; expiring schedule and insurer loss run not enclosed.",
+            "page": 4,
+            "section": "§11"
+          },
+          {
+            "label": "Insurance history",
+            "value": "Client reports no prior cancellation, avoidance or refusal to renew; not independently checked.",
+            "page": 4,
+            "section": "§11"
+          }
+        ]
+      }
+    }
+  ]
+}

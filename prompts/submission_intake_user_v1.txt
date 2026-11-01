@@ -1,0 +1,188 @@
+Extract the predefined basic information and evaluate screening
+checks SC01–SC06 using the source pages below.
+
+CASE CONTEXT
+Case ID: {{case_id}}
+Source version: {{source_version}}
+Synthetic demonstration case: {{is_synthetic_demo}}
+
+DEMO EXCEPTION
+For synthetic case NB-2026-001 only, the fictional site
+description and case reference are sufficient for demonstration
+identification. The intentionally omitted real postcode and
+company registration number do not automatically block screening.
+
+Do not invent replacement identifiers. Extract those missing
+fields as not_provided. This exception does not resolve any
+other missing or contradictory information.
+
+PREDEFINED BASIC FIELDS
+
+Submission details:
+- broker_name
+- submission_reference
+- submission_date
+- proposed_insurance_start_date
+- proposed_insurance_end_date
+
+Company details:
+- company_name
+- company_registration_number
+- business_description
+- year_established
+
+Business operations:
+- annual_turnover
+- employee_count
+- operating_hours
+
+Premises:
+- site_address
+- country_or_territory
+- site_count
+- ownership
+- occupancy
+- total_floor_area
+
+Building details:
+- construction_materials
+- year_built
+- extensions
+- heating_arrangements
+- vacant_areas
+- planned_building_works
+
+Requested cover:
+- requested_insurance_sections
+- additional_cover_requests
+
+Declared property values:
+- buildings_reinstatement_value
+- general_contents_value
+- computer_equipment_value
+- current_stock_value
+- maximum_stock_value
+
+Business interruption:
+- requested_bi_amount
+- bi_basis
+- maximum_indemnity_period
+
+Loss and insurance history:
+- previous_losses
+- previous_insurance_details
+- cancellation_avoidance_or_refusal_history
+
+Submission completeness:
+- missing_information
+- conflicting_information
+- referenced_documents_not_supplied
+
+SPECIAL FIELD INSTRUCTIONS
+previous_losses:
+Return a list of records containing loss_date, description,
+amount_paid, outstanding_amount and remedial_action.
+Retain source references and missing values for each record.
+An explicitly reported absence of losses can be represented
+by an empty list with the supporting statement in evidence
+and note. An unspecified loss history is null/not_provided.
+
+Completeness fields:
+Return lists of documented gaps, contradictions and referenced
+documents not supplied. State whether each item is explicitly
+identified in the source or recognised from an unfilled required
+field. Do not describe the absence of information as a
+contradiction. Do not imply that a document was independently
+reviewed when only its extract is supplied.
+
+SCREENING POLICY V1
+
+SC01 — Company and site identification
+Pass: the proposer and proposed insured site can be identified,
+subject to the explicitly permitted synthetic-case exception.
+Unknown: either cannot be identified reliably.
+Fail: the source explicitly establishes that there is no
+identifiable proposer or insured site for this submission.
+
+SC02 — Territory
+Pass: the insured site is stated to be in the UK.
+Fail: it is stated to be outside the UK.
+Unknown: territory cannot be established.
+
+SC03 — Business activity
+Pass: the stated business is furniture storage/distribution,
+with no manufacturing or processing activity.
+Fail: stated activities include manufacturing/processing or
+a different business outside this demonstration's scope.
+Unknown: the description is insufficient or materially conflicting.
+Do not infer “no manufacturing” merely from its omission.
+
+SC04 — Site and occupancy
+Pass: the submission concerns one occupied site.
+Fail: it explicitly concerns multiple sites or a wholly or
+partly unoccupied site, outside this demonstration's scope.
+Unknown: site count or occupancy cannot be established.
+Do not confuse a warehouse extension with a second site.
+
+SC05 — Requested cover
+Pass: property damage insurance is requested.
+Fail: the submission explicitly requests only other cover.
+Unknown: the requested cover cannot be established.
+
+SC06 — Essential information quality
+Pass: supplied text is sufficiently readable and SC01–SC05
+can be evaluated without unresolved essential contradictions.
+Fail: the source explicitly states that essential submission
+information is unreliable or unusable.
+Unknown: missing, unreadable or conflicting essential information
+prevents reliable screening.
+
+Non-blocking flags:
+Record relevant outstanding information, such as protection
+coverage, panel specification, storage height, repair evidence,
+valuation basis or business interruption calculation.
+These do not automatically fail the basic screen.
+
+OUTPUT STRUCTURE
+{
+  "basic_information": [
+    {
+      "field_id": "one of the predefined field IDs",
+      "value": null,
+      "unit": null,
+      "status": "not_provided",
+      "evidence": [
+        {
+          "page": 1,
+          "section": "source section if available, otherwise null",
+          "quote": "exact source wording",
+          "attribution": "source attribution if stated, otherwise null"
+        }
+      ],
+      "note": null
+    }
+  ],
+  "screening_checks": [
+    {
+      "check_id": "SC01",
+      "result": "pass",
+      "reason": "concise explanation",
+      "supporting_field_ids": [],
+      "evidence": []
+    }
+  ],
+  "non_blocking_review_flags": [
+    {
+      "issue": "description",
+      "information_required": "specific clarification",
+      "evidence": []
+    }
+  ]
+}
+
+Return all predefined fields exactly once and all six checks
+exactly once. Use the same evidence-object structure throughout.
+The example objects illustrate structure, not actual findings.
+
+SOURCE PAGES
+{{page_labelled_pdf_text}}

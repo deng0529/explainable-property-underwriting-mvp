@@ -1,6 +1,18 @@
 # Explainable Property Underwriting MVP
 
-Status: revised three-tab UI framework and company document review authorised on 31 October 2026. The current UI uses Submission | Assessment | Decision, superseding the earlier seven-screen layout. Only document review and UI navigation are functional; AI, human confirmation, ER/BRB inference and decision recording remain deferred.
+Current BRB checkpoint: the user-supplied 1.0-demo nine-rule model is configured and
+implemented. The fourth Assessment action explicitly reuses a matching saved result
+or runs max-normalised antecedent matching, normalised rule activation and the shared
+analytical ER core on full Fire/Security distributions. Unknown and residual mass
+remain separate. Research assumptions are not insurance acceptance criteria.
+See docs/brb.md. Decision recording remains deferred; older checkpoint text follows.
+
+Status: Submission basic-information extraction/screening and central YAML configuration authorised on 1 November 2026. The current UI remains Submission | Assessment | Decision. Only an explicit owner-authorised action may call GPT; tests use mocks. Approved prompts are read from text files, validated results are stored append-only in Turso, and non-secret settings live in config/settings.yaml. The initial YAML model is gpt-5-mini. Credentials load from .env; local_owner requires loopback binding and no password. Intake checks saved Turso results before any GPT call and recovers missing screening from saved extraction when sufficient. Attribute evidence and initial beliefs are implemented with human review. Analytical importance-weight ER aggregation and the supplied top-level BRB model are enabled; decision recording remains deferred.
+
+Current belief checkpoint: initial five-attribute proposals and separate human
+accept/edit/confirm events are implemented using the complete reviewed-evidence
+hash. The approved belief prompt is in YAML. Beliefs do not represent event
+probabilities; analytical ER and top-level BRB are now implemented, while decision recording remains unimplemented. See docs/attribute-beliefs.md and docs/brb.md.
 
 ## Purpose
 
@@ -17,8 +29,8 @@ This reference supplies context only, not the fictional case facts, scoring rule
 ## Working sequence
 
 1. Supplied source PDF is preserved unchanged.
-2. CURRENT CHECKPOINT: company selection from a JSON case catalogue; Submission with prepared summary, paged PDF viewer/download and screening placeholders; Assessment with selectable grouped attributes, evidence/belief placeholders and blank result panels; Decision with disabled next-action, notes, save and export controls. Scope session state by case ID. Model settings belong in an expander. No Add Company interface. Codex must not recreate or alter the submission silently.
-3. Design three prompts in this conversation and review them before implementation.
+2. Document-review UI established: company selection from a JSON case catalogue; Submission with prepared summary, paged PDF viewer/download and screening placeholders; Assessment with selectable grouped attributes, evidence/belief placeholders and blank result panels; Decision with disabled next-action, notes, save and export controls. Scope session state by case ID. Model settings belong in an expander. No Add Company interface. Codex must not recreate or alter the submission silently.
+3. CURRENT CHECKPOINT: approved submission-intake prompts supplied; implement the explicit extraction/screening action and YAML configuration only. Future attribute prompts remain unapproved.
 4. Transfer approved prompts and small task specifications to Codex as Markdown.
 5. Implement and inspect one task at a time in Streamlit.
 6. Add human review, group ER, top-level rule inference, decision recording and audit export incrementally.
@@ -90,3 +102,8 @@ Numerical checks must include pure Low/High/Unknown, mixed and incomplete ER cas
 ## Deferred scope
 
 Scanned-document OCR, external retrieval, live company lookups, multiple assessors, pricing, quotation, binding and policy issuance are deferred. This overview preserves the longer project direction without requiring these features now.
+
+Current interaction: startup and ordinary navigation do not load analysis from Turso
+or call GPT. The button checks Turso first; saved results load without GPT. Only if
+no valid saved result exists may that explicit action extract, screen and save.
+Results loaded by the button remain visible in the current browser session.

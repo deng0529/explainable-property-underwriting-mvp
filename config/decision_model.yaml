@@ -1,0 +1,191 @@
+# Illustrative research prototype: ER groups and top-level BRB assessment.
+model_version: decision-model-brb-v1
+tolerances:
+  distribution_sum: 1.0e-06
+  weight_zero: 1.0e-12
+  er_floating_cleanup: 1.0e-12
+  assessment_tie: 1.0e-06
+grades:
+  order:
+  - low
+  - high
+  definitions:
+    low:
+      label: Low concern
+      definition: Assigned belief supporting low concern.
+    high:
+      label: High concern
+      definition: Assigned belief supporting high concern.
+  unassigned:
+    field: unassigned_belief
+    label: Unknown
+    definition: Unassigned assessment belief; not a third ER grade.
+attributes:
+- id: F1
+  definition: Materials, packaging, quantity where relevant, storage height, arrangement,
+    aisles, accumulation and waste handling. Assess sprinkler arrangements under F3,
+    not F1.
+  label: Combustible storage
+  enabled: true
+- id: F2
+  definition: Electrical condition, charging arrangements, heating, smoking, hot work
+    and contractor controls.
+  label: Ignition controls
+  enabled: true
+- id: F3
+  definition: 'Keep findings under three aspects: compartmentation and fire separation;
+    fire detection and alarms; fire suppression.'
+  aspects:
+  - Compartmentation and fire separation
+  - Fire detection and alarms
+  - Fire suppression
+  label: Fire protection
+  enabled: true
+  belief_aspects:
+  - compartmentation
+  - detection
+  - suppression
+- id: S1
+  definition: Doors, windows, shutters, locks, perimeter, gates, keys, visitors and
+    closing procedures.
+  label: Access protection
+  enabled: true
+- id: S2
+  definition: Intruder alarm coverage, servicing, monitoring, signalling, response
+    arrangements and relevant CCTV. Do not treat CCTV as equivalent to a monitored
+    intruder alarm.
+  label: Intrusion detection
+  enabled: true
+er:
+  enabled: true
+  method: analytical_er_importance_normalized_v1
+  normalization_policy: divide_by_group_total
+  groups:
+    fire:
+      label: Fire
+      members:
+      - F1
+      - F2
+      - F3
+      importance_weights:
+        F1: 1
+        F2: 1
+        F3: 1
+    security:
+      label: Security
+      members:
+      - S1
+      - S2
+      importance_weights:
+        S1: 1
+        S2: 1
+brb:
+  id: overall
+  enabled: true
+  configured: true
+  version: 1.0-demo
+  method: rimer_activation_analytical_er
+  assumptions: Illustrative research-prototype assumptions; not Protector rules, validated loss probabilities or insurance acceptance criteria. Fire influence is intentionally greater through asymmetric conclusions, not additional input weighting.
+  active_rule_display_tolerance: 1.0e-10
+  adapter: unassigned_to_unknown_state
+  inputs:
+    fire:
+      reference: er:fire
+      states:
+      - low
+      - high
+      - unknown
+      state_definitions:
+        low: Low-concern input state.
+        high: High-concern input state.
+        unknown: Explicit insufficient-information state at the BRB interface.
+    security:
+      reference: er:security
+      states:
+      - low
+      - high
+      - unknown
+      state_definitions:
+        low: Low-concern input state.
+        high: High-concern input state.
+        unknown: Explicit insufficient-information state at the BRB interface.
+  input_attribute_weights:
+    fire: 1
+    security: 1
+  output:
+    states:
+    - low
+    - high
+    - unknown
+    explicit_unknown:
+      state: unknown
+      field: state_beliefs.unknown
+      label: Unknown state (insufficient information)
+    residual_unassigned:
+      field: residual_unassigned
+      label: Residual unassigned output belief
+  complete_rule_base: true
+  rules:
+  - id: R01
+    enabled: true
+    antecedents:
+      fire: low
+      security: low
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.95, high: 0.05, unknown: 0.00}
+  - id: R02
+    enabled: true
+    antecedents:
+      fire: low
+      security: high
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.40, high: 0.60, unknown: 0.00}
+  - id: R03
+    enabled: true
+    antecedents:
+      fire: low
+      security: unknown
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.40, high: 0.10, unknown: 0.50}
+  - id: R04
+    enabled: true
+    antecedents:
+      fire: high
+      security: low
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.10, high: 0.90, unknown: 0.00}
+  - id: R05
+    enabled: true
+    antecedents:
+      fire: high
+      security: high
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.00, high: 1.00, unknown: 0.00}
+  - id: R06
+    enabled: true
+    antecedents:
+      fire: high
+      security: unknown
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.00, high: 0.80, unknown: 0.20}
+  - id: R07
+    enabled: true
+    antecedents:
+      fire: unknown
+      security: low
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.20, high: 0.10, unknown: 0.70}
+  - id: R08
+    enabled: true
+    antecedents:
+      fire: unknown
+      security: high
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.00, high: 0.60, unknown: 0.40}
+  - id: R09
+    enabled: true
+    antecedents:
+      fire: unknown
+      security: unknown
+    rule_weight: 1
+    conclusion_beliefs: {low: 0.00, high: 0.00, unknown: 1.00}

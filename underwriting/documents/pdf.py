@@ -4,13 +4,16 @@ from pathlib import Path
 import pymupdf
 import streamlit as st
 
-SOURCE = Path(__file__).parent / "Northbridge_Broker_Submission.pdf"
+from underwriting.paths import PROJECT_ROOT
 
 
-def read_source(path: str | Path = SOURCE) -> bytes:
+def read_source(path: str | Path | None = None) -> bytes:
+    if path is None:
+        from underwriting.configuration.cases import load_cases
+        path = next(iter(load_cases().values()))["document_path"]
     path = Path(path)
     if not path.is_absolute():
-        path = Path(__file__).parent / path
+        path = PROJECT_ROOT / path
     return path.read_bytes()
 
 

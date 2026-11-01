@@ -1,12 +1,11 @@
 """Read the local case catalogue without writing case records."""
 import json
-from pathlib import Path
+from underwriting.configuration.settings import get_config, resolve_path
 
-ROOT = Path(__file__).resolve().parent
 
 
 def load_cases():
-    cases = json.loads((ROOT / "case_catalogue.json").read_text(encoding="utf-8"))["cases"]
+    cases = json.loads(resolve_path(get_config()["app"]["case_catalogue_path"]).read_text(encoding="utf-8"))["cases"]
     if not cases or len({case["case_id"] for case in cases}) != len(cases):
         raise ValueError("Provide at least one case and unique case IDs.")
     for case in cases:
