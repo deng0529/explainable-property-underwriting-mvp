@@ -19,3 +19,24 @@ instructions determine scope.
   requests, live data changes, training, deployment or extra agents unless requested.
 - Update README/CHANGELOG for user-visible changes. Keep dependencies minimal and
   retain upstream MIT attribution in numerical code and THIRD_PARTY_NOTICES.md.
+
+## Version 2 boundaries
+
+- Work only in this V2 worktree/branch. Never edit or restart V1 or deploy V2.
+- Default offline SQLite under .runtime; use V2-only environment variable names.
+  No production connections, credential fallback or copied production records.
+- reliability/prerequisites.py supplies shared prerequisite contracts. Services
+  remain the orchestration boundary; UI is explicit interaction, never execution
+  on navigation. Decision assembles persistent prerequisites in snapshot.py.
+- Saved-first lookups precede provider work. Content hashes exclude run IDs but
+  retain material facts, source and relevant configuration/prompt identity.
+- reliability/inputs.py guards complete document/request sizes and provider
+  eligibility. Never truncate, implicitly retry or bypass readonly enforcement.
+- reliability/recovery.py only recovers durably recorded responses after timeout
+  and grace; retry persistence without provider calls. Unreceived responses and
+  orphan claims require owner inspection, never automatic regeneration.
+- reliability/diagnostics.py defines safe allowlisted metadata. Do not log raw
+  documents, provider exception bodies or secrets. Preserve original responses
+  only in ignored, worktree-local pending storage and configured test database.
+- evals is synthetic software evaluation, separate from expert approval. Preserve
+  unchanged numerical modules/model and upstream MIT notices. Use offline tests.

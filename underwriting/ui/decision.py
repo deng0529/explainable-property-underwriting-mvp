@@ -133,10 +133,14 @@ def render_decision(case, prefix):
                         view['stale'] = not same_review_content(assemble_snapshot(case,store),view['run']['input_snapshot'])
         except DecisionPrerequisiteError as error:
             status.update(label='Prerequisites incomplete · no GPT request made', state='error', expanded=False)
+            from underwriting.ui.diagnostics import remember
+            remember(view,'Decision',error=error)
             view['blocked'] = str(error)
             if view['run']:
                 view['stale'] = True
         except (ValueError, OSError, PermissionError, StoreError) as error:
+            from underwriting.ui.diagnostics import remember
+            remember(view,'Decision',error=error)
             st.error(str(error))
             if view['run']:
                 view['stale'] = True
@@ -145,6 +149,8 @@ def render_decision(case, prefix):
         load_clicked=st.button('Load / Generate decision review' if owner else 'Load saved decision review',key=key+':load',type='primary',help='Read matching saved Submission and Assessment records directly from Turso before any GPT request.')
     if load_clicked:
         action()
+    from underwriting.ui.diagnostics import render
+    render(view,'Decision')
     if view.get('blocked'):
         st.warning(view['blocked'])
         st.caption('Complete the indicated work in Submission / Assessment, then click Load / Generate decision review to check again. No GPT request or database write was made by this blocked action.')

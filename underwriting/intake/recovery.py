@@ -47,7 +47,10 @@ def recover_screening(saved, pages, case):
                 description = text(names[0])
                 quote = " ".join(item["quote"].lower() for item in evidence(names))
                 explicit_no = bool(re.search(r"(?:no|without)\s+manufactur(?:e|ing)", quote))
-                if "furniture" in description and ("storage" in description or "distribution" in description) and explicit_no:
+                processing = bool(re.search(r"(?:includes?|undertakes?|carries out)\s+(?:\w+\s+){0,2}(?:manufactur|processing)", quote))
+                if processing:
+                    outcome = "fail"
+                elif "furniture" in description and ("storage" in description or "distribution" in description) and explicit_no:
                     outcome = "pass"
                 elif re.search(r"(?:includes?|undertakes?)\s+manufactur", quote):
                     outcome = "fail"

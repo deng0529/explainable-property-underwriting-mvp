@@ -28,8 +28,8 @@ class ConfigurationTests(unittest.TestCase):
         with patch("underwriting.configuration.access.get_config", return_value=config), \
              patch("underwriting.configuration.access.load_dotenv"), \
              patch.dict(os.environ, {"OPENAI_MODEL": "must-not-be-used"}, clear=True):
-            settings = load_settings({"OPENAI_API_KEY": "test-only-key", "TURSO_DATABASE_URL": "test-only-url",
-                                      "TURSO_AUTH_TOKEN": "test-only-token", "INTAKE_ADMIN_PASSWORD": "test-only-password"})
+            settings = load_settings({"V2_OPENAI_API_KEY": "test-only-key", "V2_TURSO_DATABASE_URL": "test-only-url",
+                                      "V2_TURSO_AUTH_TOKEN": "test-only-token", "INTAKE_ADMIN_PASSWORD": "test-only-password"})
             self.assertEqual(settings.model, "")
             self.assertEqual(settings.missing(), ["llm.model"])
             self.assertNotIn("test-only-key", repr(settings))
@@ -56,7 +56,7 @@ class ConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "unique"):
             validate(config)
         config = copy.deepcopy(get_config())
-        config["OPENAI_API_KEY"] = "test-only-forbidden"
+        config["V2_OPENAI_API_KEY"] = "test-only-forbidden"
         with self.assertRaises(ConfigError) as caught:
             validate(config)
         self.assertNotIn("test-only-forbidden", str(caught.exception))

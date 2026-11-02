@@ -33,6 +33,14 @@ def response_data():
         "non_blocking_review_flags": []}
 
 
+def seed_submission(store, case, digest):
+    store.initialise(None)
+    store.save({'run_id':'v2-prerequisite-'+case['case_id'],'case_id':case['case_id'],
+                'source_version':case['submission_version'],'source_hash':digest,
+                'finished_at':'2000-01-01T00:00:00+00:00','status':'completed',
+                'result':response_data(),'outcome':'Proceed to assessment','validation_issues':[]},None)
+
+
 class SQLiteStore(TursoStore):
     """Exercise the same production SQL against in-memory SQLite, not a fake state dictionary."""
     def __init__(self, settings):
@@ -87,7 +95,7 @@ controls({"case_id": "TEST-001", "submission_version": "1.0"}, "test", st.sessio
             (self.temp_root / "prompts" / file).write_bytes((ROOT / "prompts" / file).read_bytes())
         self.root_patch = patch("underwriting.intake.service.ROOT", self.temp_root)
         self.root_patch.start()
-        self.settings = Settings("test-key", "test-model", "https://test.invalid", "test-token", "local_owner")
+        self.settings = Settings("test-key", "test-model", "https://test.invalid", "test-token", "local_owner", service_mode="test_turso", test_scope_confirmed=True, allowed_test_database_hosts=("test.invalid",))
         self.proof = None
         self.local_patch = patch("underwriting.configuration.access.local_server", return_value=True)
         self.local_patch.start()

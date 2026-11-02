@@ -47,7 +47,9 @@ def reviewed_set(evidence, events):
         raise ValueError("Reviewed evidence required for all five attributes. Pending: " + ", ".join(missing))
     result["attributes"].sort(key=lambda item: item["attribute_id"])
     result["evidence_run_id"] = evidence["run_id"]
-    return result, content_hash(result), versions
+    material = {key:value for key,value in result.items() if key != 'evidence_run_id'}
+    identity = {'version':get_config()['reliability']['identity_version']+':reviewed-evidence','content':material,'attributes':evidence.get('attribute_configuration',attribute_definitions())}
+    return result, content_hash(identity), versions
 
 
 def current_input(case, store):
@@ -83,6 +85,8 @@ def historical_definitions(run):
 
 
 def retain_beliefs(run):
+    from underwriting.reliability.diagnostics import attach
+    attach(run,"Beliefs")
     directory = ROOT / ".belief_pending"
     directory.mkdir(exist_ok=True)
     path = directory / (run["run_id"] + ".json")
@@ -101,19 +105,37 @@ def pending_beliefs(case, digest):
 
 def retry_belief_save(settings, store, run):
     require_owner(settings)
+    if run.get('status')=='running':
+        from underwriting.reliability.recovery import recover_running
+        def validate_retained(record):
+            candidate=dict(record,result=json.loads(record['response_text']))
+            record.update(result=validate_beliefs(candidate['result'],record['reviewed_evidence'],record['assessment_settings'],definitions=historical_definitions(candidate)),status='completed')
+        scope=(run['case_id'],run['source_version'],run['source_hash'],run['reviewed_hash'])
+        run=recover_running(run,settings,validate_retained,'Beliefs',lock=_locks.get(scope))
+        retain_beliefs(run)
     if run["status"] not in {"completed", "failed", "stale"}:
         raise ValueError("Interrupted belief request requires recovery; no automatic paid retry.")
-    store.initialise_beliefs()
-    store.save_beliefs(run)
+    from underwriting.reliability.diagnostics import attach
+    run.pop('persistence_error',None)
+    attach(run,'Beliefs')
+    try:
+        store.initialise_beliefs()
+        store.save_beliefs(run)
+    except Exception:
+        run['persistence_error']=True
+        retain_beliefs(run)
+        raise
     (ROOT / ".belief_pending" / (run["run_id"] + ".json")).unlink(missing_ok=True)
     return run
 
 
 def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, expected_run=None, request=None, progress=None):
+    injected_request = request is not None
     request = request or structured_request
     report = progress or (lambda stage, detail: None)
     report("Evidence", "Checking current source and the complete reviewed evidence set in Turso.")
-    digest, evidence, reviewed, review_hash, versions = current_input(case, store)
+    from underwriting.reliability.prerequisites import reviewed_context
+    digest, evidence, reviewed, review_hash, versions = reviewed_context(case, store)
     scope = (case["case_id"], case["submission_version"], digest, review_hash)
     with _guard:
         lock = _locks.setdefault(scope, threading.Lock())
@@ -124,8 +146,11 @@ def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, ex
         saved = store.latest_beliefs(case, digest, review_hash)
         if saved and not regenerate:
             validate_beliefs(saved["result"], saved["reviewed_evidence"], saved["assessment_settings"], definitions=historical_definitions(saved))
-            return saved
+            from underwriting.reliability.diagnostics import loaded
+            return loaded(saved,"Beliefs")
         require_owner(settings)
+        from underwriting.reliability.prerequisites import assessment_entry
+        assessment_entry(case,store,digest)
         if {attribute["attribute_id"] for attribute in reviewed["attributes"]} != {attribute["id"] for attribute in attribute_definitions()}:
             raise ValueError("Reviewed evidence does not match the currently enabled model attributes. Deliberately update/review evidence before new proposals.")
         if regenerate and not confirmed:
@@ -136,11 +161,15 @@ def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, ex
             raise ValueError("Belief history changed. Reload before confirming regeneration.")
         if previous and not regenerate:
             raise ValueError("A previous attempt exists; explicitly confirm regeneration or retry its save.")
+        from underwriting.reliability.inputs import generation_allowed
+        generation_allowed(settings,injected_request)
         if settings.missing():
             raise ValueError("Missing configuration: " + ", ".join(settings.missing()))
         if pending_beliefs(case, digest):
             raise ValueError("A belief response is retained. Retry save without another GPT call.")
         prompt, metadata = belief_prompt(case, reviewed)
+        from underwriting.reliability.inputs import check_request
+        input_size=check_request("",prompt,settings.model)
         identifier = uuid.uuid4().hex
         store.initialise_beliefs()
         generation = content_hash(["attribute-beliefs", *scope, actual])
@@ -154,7 +183,7 @@ def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, ex
                "assessment_settings": assessment_settings, "assessment_settings_hash": content_hash(assessment_settings),
                "schema_version": SCHEMA_VERSION, "schema_hash": content_hash(belief_output_schema()), "decision_model": model_metadata(),
                "configuration": configuration_metadata(), "model": settings.model,
-               "started_at": now(), "finished_at": None, "status": "running", "result": None,
+               "timeout_seconds":settings.timeout_seconds,"input_size":input_size,"started_at": now(), "finished_at": None, "status": "running", "result": None,
                "raw_response": None, "response_text": None, "usage": None, "validation_errors": []}
         retain_beliefs(run)
         try:

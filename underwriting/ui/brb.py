@@ -1,5 +1,6 @@
 """Explicit BRB action, distributions, activated-rule trace and numerical explanation."""
 import streamlit as st
+from underwriting.ui.diagnostics import remember
 
 from underwriting.ui.navigation import activate_stage, stage_button
 from underwriting.models.brb import ENGINE_VERSION
@@ -47,11 +48,13 @@ def brb_controls(case, prefix, er_view, button_slot):
             with st.status("BRB · checking current ER results and saved assessments", expanded=True) as status:
                 result, reused = calculate_brb(settings, case, er_run, BRBStore(settings), model)
                 view.update(run=result, stale=False, invalidated=False, origin="Turso database · no recalculation" if reused else "Numerical calculation · saved to Turso")
+                remember(view,"BRB",result,source="saved_database_result" if reused else "numerical_calculation")
                 activate_stage(st.session_state, prefix, "BRB results")
                 status.update(label="Saved BRB assessment loaded" if reused else "BRB calculation saved", state="complete", expanded=False)
         except (ValueError, ArithmeticError, OSError, PermissionError, StoreError) as error:
             if isinstance(error, ValueError) and view.get("run"):
                 view.update(stale=True, invalidated=True)
+            remember(view,"BRB",error=error)
             st.error(str(error))
     return view
 
@@ -70,6 +73,8 @@ def rule_rows(rules, input_ids, states):
 
 
 def brb_results(view):
+    from underwriting.ui.diagnostics import render
+    render(view,"BRB")
     if view.get("stale"):
         st.warning("BRB result is stale: ER results, confirmed inputs or rules changed. Calculate again before using it as current.")
         return

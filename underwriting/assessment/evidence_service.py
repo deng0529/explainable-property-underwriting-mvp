@@ -21,6 +21,8 @@ def document_hash(case):
 
 
 def evidence_prompt(case, pages):
+    from underwriting.reliability.inputs import check_document
+    check_document(pages,get_config()["llm"]["model"])
     definition = get_config()["prompts"]["attribute_evidence"]
     values = {"attribute_definitions_from_yaml": json.dumps(attribute_definitions(), ensure_ascii=False, indent=2),
               "case_id_and_source_version": f"Case ID: {case['case_id']}\nSource version: {case['submission_version']}",
@@ -61,6 +63,8 @@ def retained(case, digest):
 
 
 def retain_evidence(run):
+    from underwriting.reliability.diagnostics import attach
+    attach(run,"Evidence")
     directory = ROOT / ".evidence_pending"
     directory.mkdir(exist_ok=True)
     path = directory / (run["run_id"] + ".json")
@@ -71,16 +75,35 @@ def retain_evidence(run):
 
 def retry_evidence_save(settings, store, run):
     require_owner(settings)
+    if run.get('status')=='running':
+        from underwriting.reliability.recovery import recover_running
+        def validate_retained(record):
+            source=store.source(record['source_hash'],record['text_extraction_version'])
+            if not source or source['source_hash']!=record['source_hash'] or source['text_hash']!=hashlib.sha256(json.dumps(source['pages'],ensure_ascii=False).encode()).hexdigest():
+                raise ValueError('Original saved source text is required for evidence recovery.')
+            record.update(result=validate_evidence(json.loads(record['response_text']),source['pages'],definitions=record['attribute_configuration']),status='completed')
+        scope=(run['case_id'],run['source_version'],run['source_hash'])
+        run=recover_running(run,settings,validate_retained,'Evidence',lock=_locks.get(scope))
+        retain_evidence(run)
     if run["status"] not in {"completed", "failed"}:
         raise ValueError("Interrupted evidence request requires owner recovery; it will not be automatically repeated.")
-    store.initialise_evidence()
-    store.save_evidence(run)
+    from underwriting.reliability.diagnostics import attach
+    run.pop('persistence_error',None)
+    attach(run,'Evidence')
+    try:
+        store.initialise_evidence()
+        store.save_evidence(run)
+    except Exception:
+        run['persistence_error']=True
+        retain_evidence(run)
+        raise
     (ROOT / ".evidence_pending" / (run["run_id"] + ".json")).unlink(missing_ok=True)
     return run
 
 
 def find_evidence(settings, case, store, regenerate=False, confirmed=False, expected_run=None, request=None, progress=None):
     report = progress or (lambda stage, detail: None)
+    injected_request = request is not None
     request = request or structured_request
     digest = document_hash(case)
     scope = (case["case_id"], case["submission_version"], digest)
@@ -99,10 +122,15 @@ def find_evidence(settings, case, store, regenerate=False, confirmed=False, expe
                 may_save_text = False
             pages = source_pages(case, digest, store, may_save_text)
             validate_evidence(saved["result"], pages, definitions=saved["attribute_configuration"])
-            return saved
+            from underwriting.reliability.diagnostics import loaded
+            return loaded(saved,"Evidence")
         require_owner(settings)
+        from underwriting.reliability.prerequisites import assessment_entry
+        assessment_entry(case,store,digest)
         if regenerate and not confirmed:
             raise PermissionError("Confirm the paid regeneration before continuing.")
+        from underwriting.reliability.inputs import generation_allowed
+        generation_allowed(settings,injected_request)
         if settings.missing():
             raise ValueError("Missing configuration: " + ", ".join(settings.missing()))
         previous = store.latest_evidence(case, digest, successful=False)
@@ -117,6 +145,8 @@ def find_evidence(settings, case, store, regenerate=False, confirmed=False, expe
         report("Source", "Loading full page-labelled original PDF text, with matching source provenance.")
         pages = source_pages(case, digest, store, True)
         prompt, metadata = evidence_prompt(case, pages)
+        from underwriting.reliability.inputs import check_request
+        input_size=check_request("",prompt,settings.model)
         generation = hashlib.sha256(json.dumps(["attribute-evidence", *scope, actual]).encode()).hexdigest()
         identifier = uuid.uuid4().hex
         if not store.claim(generation, identifier, None):
@@ -128,7 +158,7 @@ def find_evidence(settings, case, store, regenerate=False, confirmed=False, expe
                "prompt": metadata, "attribute_configuration_hash": attribute_hash(),
                "attribute_configuration": attribute_definitions(), "configuration": configuration_metadata(),
                "model": settings.model, "started_at": now(), "finished_at": None, "status": "running",
-               "result": None, "raw_response": None, "response_text": None, "usage": None, "validation_errors": []}
+               "timeout_seconds":settings.timeout_seconds,"input_size":input_size,"result": None, "raw_response": None, "response_text": None, "usage": None, "validation_errors": []}
         retain_evidence(run)
         try:
             report("GPT", "One structured request for all five attributes; no beliefs or scores.")

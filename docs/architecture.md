@@ -110,3 +110,19 @@ The workflow renderer is now `ui.workflow_svg`: deterministic SVG geometry follo
 the configured rows/edges, escapes all labels and contains no executable code. Native
 `st.image` displays it. Endpoint tests verify that arrows meet source/target boundaries.
 The hierarchy continues to use Graphviz inside a centred, bounded native container.
+
+## V2 reliability layer
+
+The existing UI → service → repository architecture is retained. Shared
+`underwriting/reliability` modules handle prerequisites, input envelopes, safe
+diagnostics and interrupted-response recovery. SQLite is an isolated repository
+transport in offline mode; test Turso uses the existing repository contracts.
+No external agent framework or additional provider abstraction is necessary.
+
+Services first resolve saved content, distinguish storage errors from misses,
+then enforce prerequisites and explicit owner/provider access before generation.
+Full response retention precedes final persistence; retries save, not generate.
+Material evidence/confirmed-belief identities ignore bookkeeping run IDs.
+Historical snapshots remain immutable. The single screening resolver is shared
+with Decision snapshots and PDF reporting. Numerical model/engines are unchanged.
+See README Version 2 isolation for service gating and recovery limitations.

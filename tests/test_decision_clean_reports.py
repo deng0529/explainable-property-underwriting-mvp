@@ -103,7 +103,7 @@ render_decision({'case_id':'TEST-BELIEF','submission_version':'1','document_path
             app.button(key='case:TEST-BELIEF:1:decision:load').click().run()
             self.assertFalse(app.exception)
             self.assertEqual([tab.label for tab in app.tabs],['AI review summary','Human decision'])
-            self.assertEqual(len(app.json),0)
+            self.assertEqual(len(app.json),1)
             for title in ('Concern sources and references','Information-request sources and references','Action references, secondary suggestions and limitations','Saved snapshot and review versions'):
                 self.assertFalse(any(item.label==title for item in app.expander))
             self.assertEqual(len(app.text_area),0)

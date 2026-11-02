@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 import streamlit as st
+from underwriting.ui.diagnostics import source_label
 
 from underwriting.configuration.settings import get_config, configuration_metadata
 from underwriting.ui.intake import settings_for_ui, authorised
@@ -68,6 +69,8 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                     raise ValueError("A belief response is retained. Use Retry save without GPT.")
                 result = propose_beliefs(settings, case, store, regenerate=regenerate, confirmed=regenerate,
                                         expected_run=expected, progress=report)
+                from underwriting.ui.diagnostics import remember
+                remember(view,"Beliefs",result,source="generated_response" if used_gpt else "saved_database_result")
                 view["attempt"] = result
                 if result["status"] == "completed":
                     view.update(run=result, reviews=store.belief_reviews(result["run_id"]), stale=False)
@@ -93,6 +96,8 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
             action()
     if st.session_state.get(prefix + ":assessment_stage", "Evidence") != "Beliefs":
         return dict(view, settings=settings, store=store, case=case, prerequisite=prerequisite)
+    from underwriting.ui.diagnostics import render
+    render(view,"Beliefs")
     st.caption("Subjective concern beliefs, not event probabilities or model confidence. Unknown is unassigned belief, not a severity grade.")
     if view["stale"]:
         st.warning("Reviewed evidence changed. Loaded proposals and their confirmations are stale and are not shown as current. Deliberately Load / Propose beliefs again.")
@@ -100,7 +105,7 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
         st.caption("Beliefs: Not loaded yet · all five evidence attributes must be reviewed.")
     if view["run"]:
         run = view["run"]
-        st.caption("Belief source: " + view.get("origin", "Loaded in this session; see run provenance"))
+        st.caption("Belief source: " + source_label(view.get("origin", "Loaded in this session; see run provenance"), settings))
         with st.expander("Belief versions and history linkage"):
             st.caption(f"Saved {run['finished_at']} · Run {run['run_id']}")
             if run["configuration"] != configuration_metadata():
@@ -129,7 +134,7 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
         if st.button("Retry save · beliefs · no GPT call", disabled=not owner or store is None,
                      key=f"{prefix}:belief_retry:{run['run_id']}"):
             try:
-                retry_belief_save(settings, store, run)
+                run = retry_belief_save(settings, store, run)
                 view["pending"] = []
                 view["attempt"] = run
                 if run["status"] == "completed":
@@ -139,6 +144,8 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                     activate_stage(st.session_state, prefix, "Beliefs")
                 st.rerun()
             except (ValueError, OSError, PermissionError, StoreError) as error:
+                from underwriting.ui.diagnostics import remember
+                remember(view,"Beliefs",error=error)
                 st.error(str(error))
     return dict(view, settings=settings, store=store, case=case, prerequisite=prerequisite)
 

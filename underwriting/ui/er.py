@@ -1,5 +1,6 @@
 """Explicit ER action and complete group distributions. BRB remains disabled."""
 import streamlit as st
+from underwriting.ui.diagnostics import remember
 
 from underwriting.ui.intake import settings_for_ui, authorised
 from underwriting.persistence.intake import StoreError
@@ -50,14 +51,18 @@ def er_controls(case, prefix, belief_view, button_slot):
                 with st.status("ER · checking confirmed inputs, calculating and saving" if owner else "ER · loading saved results", expanded=True) as status:
                     result = calculate_er(settings, case, ERStore(settings), model)
                     view.update(run=result, stale=False)
+                    remember(view,"ER",result)
                     activate_stage(st.session_state, prefix, "ER results")
-                    status.update(label="ER calculated and saved" if authorised(settings) else "Saved ER results loaded", state="complete", expanded=False)
+                    status.update(label="Saved ER results loaded" if result.get("display_diagnostics") else "ER calculated and saved", state="complete", expanded=False)
             except (ValueError, ArithmeticError, OSError, PermissionError, StoreError) as error:
+                remember(view,"ER",error=error)
                 st.error(str(error))
     return view
 
 
 def er_results(view):
+    from underwriting.ui.diagnostics import render
+    render(view,"ER")
     model = get_model()
     groups = model["er"]["groups"]
     if view["stale"]:

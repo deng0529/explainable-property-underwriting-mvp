@@ -35,9 +35,9 @@ class SavedFirstTests(unittest.TestCase):
     def test_dotenv_explicit_loading_aliases_and_preserved_environment(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / ".env").write_text("OPENAI_KEY=test-only-file-key\nTURSO_URL=https://test.invalid\nTURSO_TOKEN=test-only-token\n", encoding="utf-8")
+            (root / ".env").write_text("V2_OPENAI_API_KEY=test-only-file-key\nV2_TURSO_DATABASE_URL=https://test.invalid\nV2_TURSO_AUTH_TOKEN=test-only-token\n", encoding="utf-8")
             (root / "Corda.env").write_text("OPENAI_API_KEY=must-not-load\n", encoding="utf-8")
-            with patch("underwriting.configuration.access.ROOT", root), patch.dict(os.environ, {"OPENAI_KEY": "test-only-existing"}, clear=True):
+            with patch("underwriting.configuration.access.ROOT", root), patch.dict(os.environ, {"V2_OPENAI_API_KEY": "test-only-existing"}, clear=True):
                 settings = load_settings()
                 self.assertEqual(settings.api_key, "test-only-existing")
                 self.assertEqual(settings.database_token, "test-only-token")

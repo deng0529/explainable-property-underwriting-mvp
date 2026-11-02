@@ -1,5 +1,6 @@
 """Assessment evidence selector/detail UI. No automatic assessment loading."""
 import streamlit as st
+from underwriting.ui.diagnostics import source_label
 
 from underwriting.ui.intake import settings_for_ui, authorised
 from underwriting.persistence.intake import StoreError
@@ -43,6 +44,8 @@ def evidence_controls(case, prefix, button_slot=None):
                     raise ValueError("A response is retained locally. Use Retry save; do not request GPT again.")
                 result = find_evidence(settings, case, store, regenerate=regenerate, confirmed=regenerate,
                     expected_run=expected_run, progress=report)
+                from underwriting.ui.diagnostics import remember
+                remember(view,"Evidence",result,source="generated_response" if used_gpt else "saved_database_result")
                 view["attempt"] = result
                 if result["status"] == "completed":
                     view["run"] = result
@@ -56,6 +59,8 @@ def evidence_controls(case, prefix, button_slot=None):
                         status.write(issue)
                 st.session_state[key] = view
             except (ValueError, OSError, PermissionError, StoreError) as error:
+                from underwriting.ui.diagnostics import remember
+                remember(view,"Evidence",error=error)
                 view["pending"] = retained(case, digest) if owner else []
                 st.session_state[key] = view
                 status.update(label="Attribute evidence failed", state="error")
@@ -67,13 +72,15 @@ def evidence_controls(case, prefix, button_slot=None):
             action()
     if st.session_state.get(prefix + ":assessment_stage", "Evidence") != "Evidence":
         return dict(view, settings=settings, store=store, case=case, digest=digest)
+    from underwriting.ui.diagnostics import render
+    render(view,"Evidence")
     if settings.missing(paid=False):
         st.caption("Missing configuration: " + ", ".join(settings.missing(paid=False)))
     if not view["run"]:
         st.caption("Not loaded yet")
     else:
         run = view["run"]
-        st.caption("Evidence source: " + view.get("origin", "Loaded in this session; see run provenance"))
+        st.caption("Evidence source: " + source_label(view.get("origin", "Loaded in this session; see run provenance"), settings))
         summary, reviewers = evidence_review_summary(run, view["reviews"])
         st.caption(summary)
         for name, details in reviewers.items():
@@ -95,7 +102,7 @@ def evidence_controls(case, prefix, button_slot=None):
         if st.button("Retry save · attribute evidence · no GPT call", disabled=not owner or store is None,
                      key=f"{prefix}:evidence_retry:{run['run_id']}"):
             try:
-                retry_evidence_save(settings, store, run)
+                run = retry_evidence_save(settings, store, run)
                 view["pending"] = []
                 view["attempt"] = run
                 if run["status"] == "completed":

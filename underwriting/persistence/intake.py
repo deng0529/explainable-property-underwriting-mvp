@@ -21,6 +21,11 @@ class StoreError(RuntimeError):
 class TursoStore:
     def __init__(self, settings):
         self.settings = settings
+        if settings.service_mode == 'offline':
+            self.endpoint = None
+            return
+        from underwriting.configuration.access import require_test_services
+        require_test_services(settings)
         address = settings.database_url.replace("libsql://", "https://", 1).replace("turso://", "https://", 1)
         url = urlsplit(address)
         if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
@@ -28,6 +33,11 @@ class TursoStore:
         self.endpoint = address.rstrip("/") + "/v2/pipeline"
 
     def execute(self, sql, args=(), missing_ok=False):
+        if self.settings.service_mode == 'offline':
+            from underwriting.persistence.local import execute
+            return execute(self.settings,sql,args,missing_ok)
+        from underwriting.configuration.access import require_test_services
+        require_test_services(self.settings)
         encoded = [{"type": "text", "value": str(value)} for value in args]
         try:
             response = requests.post(self.endpoint,

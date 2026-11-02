@@ -61,7 +61,7 @@ def validate(data):
     if not isinstance(data, dict):
         raise ConfigError("config/settings.yaml: a settings mapping is required.")
     # Credentials belong only in .env or deployed secrets, never in this file.
-    forbidden = {"openai_api_key", "turso_database_url", "turso_auth_token", "intake_admin_password", "api_key", "auth_token", "admin_password"}
+    forbidden = {"openai_api_key", "turso_database_url", "turso_auth_token", "intake_admin_password", "api_key", "auth_token", "admin_password", "v2_openai_api_key", "v2_turso_database_url", "v2_turso_auth_token"}
     def inspect_keys(value):
         if isinstance(value, dict):
             if any(key.lower() in forbidden for key in value):
@@ -123,6 +123,7 @@ def validate(data):
         raise ConfigError("prompts.attribute_beliefs.template: required placeholders are missing or unknown.")
     decision_prompt = required(prompts, "decision_review", dict, "prompts")
     text(decision_prompt, "version", "prompts.decision_review")
+    text(decision_prompt, "system", "prompts.decision_review")
     template = text(decision_prompt, "template", "prompts.decision_review")
     if set(re.findall(r"{{(\w+)}}", template)) != {"configured_routing_guidance", "analysis_snapshot_json"}:
         raise ConfigError("prompts.decision_review.template: required placeholders are missing or unknown.")
@@ -216,6 +217,28 @@ def validate(data):
     if app.get("default_information_category") not in display or app.get("default_screening_check") not in check_ids:
         raise ConfigError("app: invalid default category or screening check.")
     required(app, "document_initially_visible", bool, "app")
+    services = required(data, 'services', dict)
+    if services.get('mode') not in {'offline','test_turso'}:
+        raise ConfigError('services.mode: use offline or test_turso.')
+    database_path = resolve_path(text(services,'local_database_path','services'))
+    if not database_path.is_relative_to(ROOT / '.runtime'):
+        raise ConfigError('services.local_database_path must remain under this checkout .runtime/.')
+    required(services,'test_scope_confirmed',bool,'services')
+    hosts = required(services,'allowed_test_database_hosts',list,'services')
+    if any(not isinstance(host,str) or not host or '/' in host for host in hosts):
+        raise ConfigError('services.allowed_test_database_hosts: use explicit test hostnames.')
+    if services['mode']=='test_turso' and (not services['test_scope_confirmed'] or not hosts):
+        raise ConfigError('test_turso requires confirmed test scope and a hostname allowlist.')
+    reliability = required(data,'reliability',dict)
+    text(reliability,'identity_version','reliability')
+    limits = required(reliability,'input_limits',dict,'reliability')
+    default = required(limits,'default',dict,'reliability.input_limits')
+    models = required(limits,'models',dict,'reliability.input_limits')
+    for name, budget in [('default',default), *models.items()]:
+        for key in ('max_pdf_characters','max_request_utf8_bytes','max_pages'):
+            value = required(budget,key,int,'reliability.input_limits.'+name)
+            if value <= 0:
+                raise ConfigError('reliability.input_limits.'+name+'.'+key+': positive integer required.')
     return data
 
 

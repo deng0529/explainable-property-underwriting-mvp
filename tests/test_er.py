@@ -157,7 +157,7 @@ class ERIntegrationTests(unittest.TestCase):
             group = result["groups"][identifier]
             self.assertEqual(values, dict(group["assigned_beliefs"], unknown=group["unassigned_belief"]))
         self.assertEqual(result["upstream"]["commit"], "6744efbabeb27fe15dc52c516d86c929030b230e")
-        self.assertNotEqual(result["run_id"], again["run_id"])
+        self.assertEqual(result["run_id"], again["run_id"])
         self.assertEqual(result["input_belief_hash"], again["input_belief_hash"])
         confirm_belief(self.settings, self.case, self.store, proposal, "F1", "edit", .5, .3, "Mock adjustment")
         changed = calculate_er(self.settings, self.case, store)
@@ -232,7 +232,7 @@ er_results(view)
                 if ": " in item.value:
                     self.assertRegex(item.value.split(": ")[-1], r"^\d\.\d{2}$")
             self.assertFalse(any("provenance" in item.label.lower() for item in app.expander))
-            self.assertEqual(len(app.json), 2)
+            self.assertEqual(len(app.json), 3)
             self.assertTrue(any("nonlinearly" in item.value for item in app.caption))
             self.assertTrue(any("Most supported: Mixed assessment" in item.value for item in app.markdown))
             changed = copy.deepcopy(get_model())

@@ -1,4 +1,4 @@
-param([ValidateRange(1024, 65535)][int]$Port = 8501)
+param([ValidateRange(1024, 65535)][int]$Port = 8502)
 $ErrorActionPreference = 'Stop'
 $projectDirectory = Split-Path -Parent $PSScriptRoot
 $projectPython = Join-Path $projectDirectory '.venv\Scripts\python.exe'

@@ -3,6 +3,7 @@ import json
 import time
 
 import streamlit as st
+from underwriting.ui.diagnostics import source_label
 
 from underwriting.configuration.access import load_settings, require_owner
 from underwriting.intake.schema import UI_TO_PROMPT, validate_output
@@ -103,9 +104,11 @@ def load_view(case, query=False):
 
 
 def controls(case, prefix, view, document_key, toggle_callback):
+    from underwriting.ui.diagnostics import render, remember
+    render(view,"Submission")
     settings = view["settings"]
     is_owner = authorised(settings)
-    missing = settings.missing(paid=is_owner)
+    missing = settings.missing(paid=is_owner and settings.service_mode != "offline")
     previous = view["latest_attempt"]
     confirmation = False
     if previous:
@@ -174,7 +177,7 @@ def controls(case, prefix, view, document_key, toggle_callback):
                 status.write(entries[-1])
                 status.update(label=f"Intake progress · {stage}")
             try:
-                report("Database", "Connecting to Turso and checking for saved results.")
+                report("Database", source_label("Connecting to Turso and checking for saved results.",settings))
                 checked = load_view(case, query=True)
                 if checked["error"]:
                     raise StoreError(checked["error"])
@@ -200,12 +203,14 @@ def controls(case, prefix, view, document_key, toggle_callback):
                         status.write(issue)
                     remember_view(case, dict(checked, latest_attempt=result))
                 else:
-                    report("Complete", "Saved to Turso; review issues remain." if result["status"] == "needs_review" else "Validated and saved to Turso.")
+                    report("Complete", source_label("Saved to Turso; review issues remain." if result["status"] == "needs_review" else "Validated and saved to Turso.",settings))
                     status.update(label="Saved · review required" if result["status"] == "needs_review" else "Intake complete", state="complete", expanded=False)
                     checked.update(saved=result, latest_attempt=result)
                     remember_view(case, checked)
                     st.rerun()
             except (PermissionError, OSError, ValueError, StoreError) as error:
+                remember(view,"Submission",error=error)
+                render(view,"Submission")
                 failing_stage = entries[-1].split(" · ", 1)[-1].split(":", 1)[0] if entries else "Database"
                 report("Failed", f"{failing_stage}: {error}")
                 status.update(label=f"Intake failed · {failing_stage}", state="error")
@@ -217,7 +222,7 @@ def controls(case, prefix, view, document_key, toggle_callback):
                 st.text(entry)
     for item in view["pending"]:
         st.warning(f"Run {item['run_id']} is retained locally and has not been saved to Turso.")
-        if item["status"] in {"completed", "needs_review", "failed"} or item.get("raw_response"):
+        if item["status"] in {"completed", "needs_review", "failed", "running"}:
             if st.button("Save retained result · no GPT call", key=f"{prefix}:retry_save:{item['run_id']}", disabled=not is_owner or view["store"] is None):
                 try:
                     retry_save(settings, st.session_state.get("intake_owner_proof"), view["store"], item, case=case)

@@ -56,7 +56,7 @@ class BeliefTests(unittest.TestCase):
         self.request.assert_called_once()
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.settings = Settings("test-key", "test-model", "https://test.invalid", "test-token", "local_owner")
+        self.settings = Settings("test-key", "test-model", "https://test.invalid", "test-token", "local_owner", service_mode="test_turso", test_scope_confirmed=True, allowed_test_database_hosts=("test.invalid",))
         self.store = LocalBeliefStore(self.settings)
         self.case = {"case_id": "TEST-BELIEF", "submission_version": "1", "document_path": "unused.pdf"}
         self.patches = [patch("underwriting.configuration.access.local_server", return_value=True),
@@ -64,6 +64,7 @@ class BeliefTests(unittest.TestCase):
                         patch("underwriting.assessment.belief_service.document_hash", return_value="mock-source")]
         for patched in self.patches:
             patched.start()
+        evidence_tests.intake_tests.seed_submission(self.store,self.case,"mock-source")
         self.store.initialise_evidence()
         self.evidence = {"run_id": "mock-evidence-run", "case_id": self.case["case_id"], "source_version": "1", "source_hash": "mock-source",
                          "status": "completed", "finished_at": "2026-01-01", "result": evidence_tests.fixture()}
@@ -186,6 +187,7 @@ class BeliefTests(unittest.TestCase):
             attribute_configuration=attribute_definitions(), attribute_configuration_hash=attribute_hash(), schema_version="mock-schema",
             model="mock-model", text_extraction_version=TEXT_EXTRACTION_VERSION)
         # The fixture row is immutable; supply enriched metadata through the test adapter.
+        evidence_tests.intake_tests.seed_submission(self.store,{"case_id":"NB-2026-001","submission_version":"1.0"},"mock-source")
         original_latest = self.store.latest_evidence
         self.store.latest_evidence = lambda *args, **kwargs: self.evidence
         with patch("underwriting.ui.beliefs.settings_for_ui", return_value=self.settings), \

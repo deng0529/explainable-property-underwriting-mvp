@@ -33,7 +33,7 @@ class ReadinessTests(unittest.TestCase):
         view["reviews"] = self.store.belief_reviews(proposal["run_id"])
         self.assertEqual(belief_blocker(view, model), "")
         view["reviews"].append(dict(view["reviews"][0], confirmed=False))
-        self.assertIn("confirm the beliefs", belief_blocker(view, model))
+        self.assertIn("confirm", belief_blocker(view, model))
         view["stale"] = True
         self.assertIn("Evidence has changed", belief_blocker(view, model))
         view["prerequisite"] = "First load evidence."

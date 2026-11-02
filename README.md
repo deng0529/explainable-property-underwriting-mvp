@@ -1,9 +1,76 @@
 # Explainable Property Underwriting MVP
 
-**Version 0.2.0** — a local research prototype with Submission, Assessment,
+**MVP Version 2 — Reliability upgrade** — a local research prototype with Submission, Assessment,
 Decision and System overview workspaces. The supplied Northbridge case and demonstration rules are
 synthetic research assumptions, not Protector rules, validated loss probabilities
 or insurance acceptance criteria.
+
+
+## Version 2 isolation and reliability
+
+Version 1 remains in `C:\Weihua\project\explainable-property-underwriting-mvp`,
+on `main` at `c9caf217bf323bd18c58e42d08f840fce55c9314`. This worktree uses
+`feature/v2-reliability` in the separate `explainable-property-underwriting-mvp-v2`
+folder. Nothing here changes the existing cloud deployment. Run each version
+from its own environment; V2 defaults to port **8502**.
+
+V2 starts with **offline SQLite** (`services.mode: offline`). Its database is
+`.runtime/v2.sqlite`; pending responses, generated files and caches are also
+local to this worktree. It neither copies production records nor falls back to
+V1 credentials. The application initially has no saved analyses. Offline mode
+can view locally saved results and perform local numerical/review operations;
+live GPT generation is blocked. The recorded fixtures are test data, not
+fabricated company results seeded into the application.
+
+Non-secret settings remain in `config/settings.yaml`; the unchanged numerical
+model remains in `config/decision_model.yaml`. The Decision system guardrail is
+now referenced from YAML with the unchanged approved wording; complete system
+and user messages are included in its prompt hash. Restart after YAML changes.
+Only an explicitly confirmed **separate test** service may be configured using
+`services.mode: test_turso`, `test_scope_confirmed: true`, an explicit
+`allowed_test_database_hosts` list and V2-only `.env` credential names:
+`V2_OPENAI_API_KEY`, `V2_TURSO_DATABASE_URL`, `V2_TURSO_AUTH_TOKEN`.
+The host allowlist is an owner assertion of test scope, not independent proof
+that a database is non-production. Never put a production host there.
+`public_readonly` remains enforced in services and repository write boundaries.
+No live database or GPT request was used to validate this upgrade.
+
+Saved results are checked before generation. Material evidence and confirmed
+belief hashes exclude bookkeeping run IDs; actual content, source, prompt and
+relevant configuration still determine compatibility. Failed database reads
+remain errors and never become paid-generation cache misses. Missing/stale
+prerequisites stop a stage with a reminder; earlier stages never run implicitly.
+The same screening resolver supplies Submission, Decision and reports.
+
+Received responses are durably retained before final saving. Save retry never
+repeats GPT. After interruption, a recorded response can be revalidated and saved
+once the configured request timeout plus a 60-second grace has elapsed and no
+local lock is held. A response never received or durably recorded cannot be
+recovered: remote completion may be ambiguous, and a new request requires an
+explicit owner action. Claims interrupted before a pending record exists fail
+closed for owner inspection; they are not automatically released. SDK retries
+remain disabled. Recovery is bounded to one explicit attempt per action.
+
+Collapsed run diagnostics use a shared allowlist (stage, run ID, status, source,
+duration, generic error and recovery action), never exception bodies or source
+text. `reliability.input_limits` defines conservative per-model page, character
+and complete UTF-8 request limits. These are application safety envelopes, not
+provider token-capacity claims. Oversized inputs stop without truncation; an
+owner must review the envelope or supply a smaller complete source.
+
+Run offline validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe scripts/smoke_test.py
+.\.venv\Scripts\python.exe scripts/evaluate_offline.py
+```
+
+The synthetic evaluation checks software contracts only. No expert approvals or
+real-world underwriting accuracy are claimed. See `evals/README.md` and
+`docs/V2_RELIABILITY_PLAN.md`. No new providers, agents or numerical algorithms
+were introduced. The reference sections below describe the inherited workflow;
+V2 service isolation above takes precedence over shared-hosting instructions.
 
 ## Run locally
 
@@ -15,14 +82,15 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Keep your existing project-root `.env`. If it does not exist, create it using
-`.env.example` and fill in the credentials locally. Never commit credential values.
+Use this worktree’s separate project-root `.env` (loaded with override=False).
+Offline mode needs no credentials. Do not copy the Version 1 environment.
+Never commit credential values.
 
 ```powershell
 .\scripts\run.ps1
 ```
 
-Open [http://127.0.0.1:8501](http://127.0.0.1:8501). Keep the terminal open; Ctrl+C
+Open [http://127.0.0.1:8502](http://127.0.0.1:8502). Keep the terminal open; Ctrl+C
 stops the app. If that port is occupied, run `scripts/run.ps1 -Port 8502`.
 The equivalent direct command remains:
 
@@ -101,7 +169,7 @@ tabs 16px and Submission tables 15–16px. Other workspaces retain their typogra
 | `config/settings.yaml` | GPT model (`gpt-5-mini` initially), supported request settings, prompts, basic-information schema, screening policy and application/access defaults |
 | `config/decision_model.yaml` | Attribute definitions, grade order, ER groups/importance weights, BRB states, input/rule weights, nine conclusion distributions, versions and numerical tolerances |
 | `config/underwriting.configuration.cases.json` | Company metadata, case/submission identifiers and source-document paths |
-| Root `.env` | `OPENAI_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` only |
+| Root `.env` | `V2_OPENAI_API_KEY`, `V2_TURSO_DATABASE_URL`, `V2_TURSO_AUTH_TOKEN` only |
 
 The root `.env` is loaded explicitly with python-dotenv and `override=False`.
 Recognised credential aliases are supported; `OPENAI_MODEL` and an administrator

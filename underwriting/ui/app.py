@@ -23,6 +23,8 @@ def main():
 
     apply_styles()
     st.title(configuration["app"]["title"])
+    if configuration['services']['mode']=='offline':
+        st.caption('Offline development · Version 2 local SQLite only · no external database connection or GPT generation. Saved local fixtures remain reviewable.')
     try:
         cases = load_cases()
     except (OSError, ValueError, KeyError, TypeError) as error:

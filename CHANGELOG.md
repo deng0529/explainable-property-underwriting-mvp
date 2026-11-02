@@ -1,3 +1,11 @@
+## MVP Version 2 — Reliability upgrade
+
+- Isolated worktree, environment, offline SQLite storage and port 8502.
+- Shared prerequisite contracts, material-content reuse, bounded save-only
+  recovery, safe diagnostics and configurable complete-input size limits.
+- Recorded synthetic evaluation with no implied expert approval.
+- Five attributes, nine BRB rules, shared ER/BRB engines and familiar UI preserved.
+
 # Changelog
 
 ## 0.2.0 — 2026-11-02

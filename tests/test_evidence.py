@@ -49,7 +49,7 @@ class LocalEvidenceStore(EvidenceStore):
 class EvidenceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.settings = Settings("test-key", "test-model", "https://test.invalid", "test-token", "local_owner")
+        self.settings = Settings("test-key", "test-model", "https://test.invalid", "test-token", "local_owner", service_mode="test_turso", test_scope_confirmed=True, allowed_test_database_hosts=("test.invalid",))
         self.store = LocalEvidenceStore(self.settings)
         self.case = {"case_id": "TEST-EVIDENCE", "submission_version": "1", "document_path": "test.pdf"}
         self.data = fixture()
@@ -60,6 +60,7 @@ class EvidenceTests(unittest.TestCase):
                         patch("underwriting.assessment.evidence_service.source_context", return_value=("test-hash", [TEXT]))]
         for patched in self.patches:
             patched.start()
+        intake_tests.seed_submission(self.store,self.case,"test-hash")
 
     def tearDown(self):
         for patched in reversed(self.patches):
@@ -186,6 +187,7 @@ class EvidenceTests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
         # The actual case selector is retained; all evidence below is explicitly mocked.
         self.case["case_id"], self.case["submission_version"] = "NB-2026-001", "1.0"
+        intake_tests.seed_submission(self.store,self.case,"test-hash")
         with patch("underwriting.ui.evidence.settings_for_ui", return_value=self.settings), \
              patch("underwriting.ui.intake.settings_for_ui", return_value=Settings()), \
              patch("underwriting.ui.evidence.document_hash", return_value="test-hash"), \

@@ -51,6 +51,8 @@ def calculate_brb(settings, case, er_run, store, model_config=None):
         require_owner(settings)  # Read-only access cannot infer or save on a cache miss.
     except PermissionError:
         raise PermissionError("Read-only access: no saved BRB result matches the current ER results and rules. A local owner must calculate and save it first.") from None
+    from underwriting.reliability.prerequisites import assessment_entry
+    assessment_entry(case,store,er_run["source_hash"])
     result = infer_brb(inputs, model["brb"], distribution_tolerance=model["tolerances"]["distribution_sum"],
                        er_tolerance=model["tolerances"]["er_floating_cleanup"])
     if current_er_inputs(case, er_run, store, model) != inputs:
@@ -66,5 +68,7 @@ def calculate_brb(settings, case, er_run, store, model_config=None):
            "decision_model_snapshot": copy.deepcopy(model), "engine_version": ENGINE_VERSION,
            "finished_at": now(), "status": result["status"], "result": result}
     store.initialise_brb()
+    from underwriting.reliability.diagnostics import attach
+    attach(run,"BRB",source="numerical_calculation")
     store.save_brb(run)
     return run, False

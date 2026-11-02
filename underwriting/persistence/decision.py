@@ -34,6 +34,11 @@ class DecisionStore(BRBStore, SubmissionReviewStore):
     def transaction(self, statements):
         """One Hrana batch/connection, FK enforcement and rollback on any failed step."""
         require_owner(self.settings)
+        if self.settings.service_mode == 'offline':
+            from underwriting.persistence.local import transaction
+            return transaction(self.settings, statements)
+        from underwriting.configuration.access import require_test_services
+        require_test_services(self.settings)
         commands = [('PRAGMA foreign_keys=ON', []), ('BEGIN IMMEDIATE', []), *statements, ('COMMIT', [])]
         steps = []
         for index, (sql, args) in enumerate(commands):

@@ -51,6 +51,8 @@ def source_context(case):
 
 
 def prompt_context(case, pages):
+    from underwriting.reliability.inputs import check_document
+    check_document(pages,get_config()["llm"]["model"])
     definitions = get_config()["prompts"]
     paths = [resolve_path(definitions[name]["path"]) for name in ("system", "user")]
     texts = [path.read_text(encoding="utf-8") for path in paths]
@@ -77,7 +79,9 @@ def request_once(settings, system, user):
 
 
 def structured_request(settings, system, user, schema, name):
-    require_owner(settings)
+    from underwriting.reliability.inputs import generation_allowed, check_request
+    generation_allowed(settings)
+    check_request(system,user,settings.model)
     # One explicit API request. No SDK retries, tools, fallback model or repair request.
     parameters = dict(settings.generation)
     if "reasoning_effort" in parameters:
@@ -97,6 +101,8 @@ def pending_directory():
 
 
 def retain(envelope):
+    from underwriting.reliability.diagnostics import attach
+    attach(envelope,"Submission")
     target = pending_directory() / (envelope["run_id"] + ".json")
     temporary = target.with_suffix(".tmp")
     temporary.write_text(json.dumps(envelope, ensure_ascii=False, allow_nan=False), encoding="utf-8")
@@ -120,22 +126,31 @@ def pending(case_id, source_version, source_hash):
 
 def retry_save(settings, proof, store, envelope, case=None):
     require_owner(settings, proof)
-    if envelope["status"] == "running" and envelope.get("raw_response") and case:
-        digest, pages = source_context(case)
-        if (case["case_id"], case["submission_version"], digest) != (envelope["case_id"], envelope["source_version"], envelope["source_hash"]):
-            raise ValueError("Cannot recover against a changed source. Restore the original source first.")
-        try:
-            result, issues = validate_output(json.loads(envelope["response_text"]), pages, case["case_id"])
-            envelope.update(result=result, validation_issues=issues,
-                            status="needs_review" if issues else "completed",
-                            outcome=derive_outcome(result["screening_checks"], issues), finished_at=now())
-        except (ValueError, TypeError):
-            envelope.update(status="failed", error="Retained response failed validation.", finished_at=now())
+    if envelope['status']=='running':
+        from underwriting.reliability.recovery import recover_running
+        def validate_retained(record):
+            if not case:
+                raise ValueError('The original case is required to recover intake.')
+            digest,pages=source_context(case)
+            if (case['case_id'],case['submission_version'],digest)!=(record['case_id'],record['source_version'],record['source_hash']):
+                raise ValueError('Restore the original source before recovering intake.')
+            value,issues=validate_output(json.loads(record['response_text']),pages,case['case_id'])
+            record.update(result=value,validation_issues=issues,status='needs_review' if issues else 'completed',outcome=derive_outcome(value['screening_checks'],issues))
+        key=(envelope['case_id'],envelope['source_version'],envelope['source_hash'])
+        envelope=recover_running(envelope,settings,validate_retained,'Submission',lock=_locks.get(key))
         retain(envelope)
     if envelope["status"] not in {"completed", "needs_review", "failed"}:
         raise ValueError("This request did not finish. Its audit is retained; do not repeat it automatically.")
-    store.initialise(proof)
-    store.save(envelope, proof)
+    from underwriting.reliability.diagnostics import attach
+    envelope.pop('persistence_error',None)
+    attach(envelope,'Submission',source='retained_response' if envelope.get('recovery_action') else None)
+    try:
+        store.initialise(proof)
+        store.save(envelope, proof)
+    except Exception:
+        envelope['persistence_error']=True
+        retain(envelope)
+        raise
     path = pending_directory() / (envelope["run_id"] + ".json")
     path.unlink(missing_ok=True)
     return envelope
@@ -145,9 +160,9 @@ def run_intake(settings, proof, case, store, expected_run=None, confirmed=False,
     report = progress or (lambda stage, detail: None)
     report("Source", "Reading the selected PDF and page-labelled text.")
     require_owner(settings, proof)
+    injected_request = request is not None
     request = request or request_once
     digest, pages = source_context(case)
-    system, user, prompts = prompt_context(case, pages)
     key = (case["case_id"], case["submission_version"], digest)
     with _locks_guard:
         lock = _locks.setdefault(key, threading.Lock())
@@ -176,6 +191,10 @@ def run_intake(settings, proof, case, store, expected_run=None, confirmed=False,
             raise ValueError("The intake history changed. Refresh and explicitly confirm a new run.")
         if latest and not confirmed:
             raise ValueError("Explicit confirmation is required to regenerate this source.")
+        from underwriting.reliability.inputs import generation_allowed, check_request
+        generation_allowed(settings,injected_request)
+        system, user, prompts = prompt_context(case,pages)
+        input_size = check_request(system,user,settings.model)
         if settings.missing():
             raise ValueError("Missing configuration: " + ", ".join(settings.missing()))
         store.initialise(proof)
@@ -191,7 +210,7 @@ def run_intake(settings, proof, case, store, expected_run=None, confirmed=False,
                     "configuration": configuration_metadata(), "generation_settings": settings.generation,
                     "decision_model": model_metadata(),
                     "configuration_snapshot": get_config(), "output_schema": IntakeOutput.model_json_schema(),
-                    "timeout_seconds": settings.timeout_seconds,
+                    "timeout_seconds": settings.timeout_seconds, "input_size": input_size,
                     "raw_response": None, "response_text": None, "usage": None, "result": None,
                     "validation_issues": [], "outcome": None, "error": None}
         retain(envelope)
