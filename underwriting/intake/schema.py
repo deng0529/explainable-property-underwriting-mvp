@@ -207,14 +207,10 @@ def validate_output(data, pages, case_id):
 
 
 def derive_outcome(checks, issues=()):
-    values = {check["check_id"]: check["result"] for check in checks}
-    policy = get_config()["screening"]
-    if any(values[key] == "fail" and not any(key in issue for issue in issues)
-           for key in policy["scope_failure_checks"]):
-        return "Outside demo scope"
-    if issues or "unknown" in values.values() or any(values[key] == "fail" for key in policy["essential_failure_checks"]):
-        return "Pause for clarification"
-    return "Proceed to assessment"
+    # Retain the historical call signature. General data-validation concerns do
+    # not independently change six resolved Pass checks into a workflow pause.
+    from underwriting.intake.screening import resolve_checks
+    return resolve_checks(checks)['outcome']
 
 
 def schema_hash():

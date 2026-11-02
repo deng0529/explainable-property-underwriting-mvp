@@ -63,7 +63,9 @@ def load_view(case, query=False):
             if cached:
                 view.update(cached)
             return view
-        candidates = store.candidates(case["case_id"], digest)
+        from underwriting.intake.screening import current_screening_record
+        current = current_screening_record(case,store,digest)
+        candidates = [current] if current else []
         view["latest_attempt"] = store.latest(case["case_id"], None, digest, successful=False)
         invalid_saved = False
         for saved in candidates:
@@ -103,14 +105,14 @@ def load_view(case, query=False):
 def controls(case, prefix, view, document_key, toggle_callback):
     settings = view["settings"]
     is_owner = authorised(settings)
-    missing = settings.missing()
+    missing = settings.missing(paid=is_owner)
     previous = view["latest_attempt"]
     confirmation = False
     if previous:
         confirmation = st.checkbox("Confirm a new paid extraction for this source; preserve earlier runs",
             key=f"{prefix}:confirm_regeneration:{previous['run_id']}", disabled=not is_owner)
     with st.container(horizontal=True):
-        clicked = st.button("Extract information and screen", type="primary",
+        clicked = st.button("Extract information and screen" if is_owner else "Load saved submission", type="primary",
             disabled=bool(settings.missing(paid=False)) or bool(view["pending"]),
             key=f"{prefix}:extract_and_screen")
         st.button("Hide company document" if st.session_state[document_key] else "View company document",
@@ -119,7 +121,7 @@ def controls(case, prefix, view, document_key, toggle_callback):
     if missing:
         st.caption("Missing configuration: " + ", ".join(missing))
     if not is_owner:
-        st.caption("Read-only access. Local actions require access.mode: local_owner and a server bound to 127.0.0.1.")
+        st.caption("Read-only access. Load saved results and review the document; generation and changes are available only in the local owner app.")
     if view["error"]:
         st.warning(view["error"])
     if view.get("notice"):

@@ -62,8 +62,9 @@ def review_controls(case, view):
             st.caption("Unsaved review changes. Save again to record the updated review.")
         elif saved["record"]["status"] == "review_confirmed":
             st.success("Submission review saved. You can now open the Assessment tab.")
-            if run.get("validation_issues") or run["outcome"] != "Proceed to assessment":
-                st.caption("This confirms your review only. Screening remains " + run["outcome"] + "; unresolved issues still require follow-up.")
+            from underwriting.intake.screening import resolve_screening
+            resolution = resolve_screening(run,case)
+            st.caption('Screening: ' + resolution['outcome'] + '. Review confirmation does not override the screening checks; recorded data concerns remain available for follow-up.')
         else:
             st.success("Review request saved for " + saved["record"]["recipient"] + ". No message has been sent.")
     with st.expander("Saved submission review history"):

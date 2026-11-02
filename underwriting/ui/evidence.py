@@ -5,7 +5,7 @@ from underwriting.ui.intake import settings_for_ui, authorised
 from underwriting.persistence.intake import StoreError
 from underwriting.persistence.evidence import EvidenceStore
 from underwriting.assessment.evidence_service import document_hash, find_evidence, retained, retry_evidence_save, review_attribute
-from underwriting.ui.navigation import activate_stage
+from underwriting.ui.navigation import activate_stage, stage_button
 
 
 def evidence_controls(case, prefix, button_slot=None):
@@ -61,9 +61,12 @@ def evidence_controls(case, prefix, button_slot=None):
                 status.update(label="Attribute evidence failed", state="error")
                 st.error(str(error))
     button = button_slot.button if button_slot is not None else st.button
-    if button("Load attribute evidence", type="primary", disabled=store is None, key=f"{prefix}:Find evidence",
+    if stage_button(button_slot if button_slot is not None else st, "Load attribute evidence", prefix, "Evidence", disabled=store is None, key=f"{prefix}:Find evidence",
               width="stretch", help="Check Turso first; if no saved evidence exists, an owner can make one GPT request."):
-        action()
+        if not view["run"]:
+            action()
+    if st.session_state.get(prefix + ":assessment_stage", "Evidence") != "Evidence":
+        return dict(view, settings=settings, store=store, case=case, digest=digest)
     if settings.missing(paid=False):
         st.caption("Missing configuration: " + ", ".join(settings.missing(paid=False)))
     if not view["run"]:

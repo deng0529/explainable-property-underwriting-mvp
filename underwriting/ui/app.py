@@ -18,7 +18,10 @@ def main():
     from underwriting.ui.submission import render_submission
     from underwriting.ui.assessment import render_assessment
     from underwriting.ui.decision import render_decision
+    from underwriting.ui.overview import render_overview
+    from underwriting.ui.submission_tables import apply_styles
 
+    apply_styles()
     st.title(configuration["app"]["title"])
     try:
         cases = load_cases()
@@ -38,10 +41,13 @@ def main():
     prefix = f"case:{case_id}"
     st.caption(f"{case_id} · Submission v{case['submission_version']} · {case['status']}")
     st.caption("Synthetic demonstration case; all company and submission details are fictional.")
-    submission, assessment, decision = st.tabs(["Submission", "Assessment", "Decision"], key="active_workspace", on_change="rerun")
+    submission, assessment, decision, overview = st.tabs(["Submission", "Assessment", "Decision", "System overview"], key="active_workspace", on_change="rerun")
     with submission, workspace_scope(st.session_state, "Submission"):
         render_submission(case, prefix, configuration)
     with assessment, workspace_scope(st.session_state, "Assessment"):
         render_assessment(case, prefix)
     with decision, workspace_scope(st.session_state, "Decision"):
         render_decision(case, prefix)
+    if overview.open:
+        with overview, workspace_scope(st.session_state, "System overview"):
+            render_overview(case, prefix)

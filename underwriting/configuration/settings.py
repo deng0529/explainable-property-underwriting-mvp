@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+import os
 import re
 from decimal import Decimal
 from functools import lru_cache
@@ -120,6 +121,15 @@ def validate(data):
     template = text(beliefs_prompt, "template", "prompts.attribute_beliefs")
     if set(re.findall(r"{{(\w+)}}", template)) != {"belief_increment", "attribute_definitions_from_yaml", "case_id_and_source_version", "reviewed_attribute_evidence_json"}:
         raise ConfigError("prompts.attribute_beliefs.template: required placeholders are missing or unknown.")
+    decision_prompt = required(prompts, "decision_review", dict, "prompts")
+    text(decision_prompt, "version", "prompts.decision_review")
+    template = text(decision_prompt, "template", "prompts.decision_review")
+    if set(re.findall(r"{{(\w+)}}", template)) != {"configured_routing_guidance", "analysis_snapshot_json"}:
+        raise ConfigError("prompts.decision_review.template: required placeholders are missing or unknown.")
+    decision = required(data, "decision", dict)
+    guidance = required(decision, "routing_guidance", list, "decision")
+    if not guidance or any(not isinstance(line, str) or not line.strip() for line in guidance):
+        raise ConfigError("decision.routing_guidance: non-empty text entries required.")
     belief_settings = required(data, "belief_assessment", dict)
     for name in ("increment", "sum_tolerance"):
         value = required(belief_settings, name, (int, float), "belief_assessment")
@@ -227,9 +237,24 @@ def load_config(path=CONFIG_PATH):
     return validate(read_yaml(path))
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
+def _profile_config(profile):
+    data = load_config()
+    if profile:
+        if profile != 'public_readonly':
+            raise ConfigError('UNDERWRITING_PROFILE: only public_readonly is supported.')
+        overlay = read_yaml(ROOT / 'config' / 'public_readonly.yaml')
+        if overlay != {'access': {'mode': 'public_readonly'}}:
+            raise ConfigError('public_readonly.yaml must only set access.mode to public_readonly.')
+        data['access']['mode'] = overlay['access']['mode']
+    return data
+
+
 def get_config():
-    return load_config()
+    return _profile_config(os.environ.get('UNDERWRITING_PROFILE', ''))
+
+
+get_config.cache_clear = _profile_config.cache_clear
 
 
 def configuration_metadata():

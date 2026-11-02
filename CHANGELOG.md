@@ -1,5 +1,94 @@
 # Changelog
 
+## 0.2.0 — 2026-11-02
+
+- Added a dedicated public-readonly cloud entry point and deployment guide; keep
+  local owner configuration separate and block cloud paid calls/writes server-side.
+  Public controls clearly load saved results and need only database credentials.
+
+- Simplified hierarchy labels to property, Fire and Security concern assessments;
+  explained ER/BRB and labelled contribution weights. Added a clear workflow title
+  and removed the storage footer without changing diagram sizes or saved data.
+
+- Centred both overview diagrams, balanced readable sizing and collapsed supporting
+  explanations; replaced automatic workflow routing with escaped SVG connectors
+  that meet box boundaries, preserving configured dependencies and read-only behavior.
+
+- Reduced hierarchy box size and spacing; changed the workflow to compact snake
+  rows with a shared storage legend, preserving all dependencies and saved data.
+
+- Added a read-only System overview tab with a saved-data assessment pyramid and
+  explicit MVP workflow, including screening routing, human stages and shared Turso storage.
+
+- Reuse Decision reviews and cached PDFs by substantive content across identical
+  reruns, ignoring audit IDs/timestamps and repeated confirmations. Preserve original
+  snapshot integrity/history; real source/information/assessment changes still invalidate.
+
+
+- Verify repeat Decision loads reuse the persisted current review and explicitly
+  label database loads/no GPT request in progress and the review display.
+
+
+- Correct explicit Decision loading to generate one current review when no current
+  successful review exists; preserve historical runs without selecting them as current.
+- Separate AI review and Human decision tabs, preserve draft edits, and move download
+  below the tabs with report-only retry independent of paid review generation.
+- Persist versioned PDF BLOBs and integrity/version links in decision_reports; cache
+  downloads, rebuild only missing/changed artifacts, and preserve saved reviews on
+  PDF failures. Record shared screening-resolution corrections explicitly in snapshots.
+
+
+- Clean Decision to one AI summary; confine old narrative to dated History and
+  prioritize validated current reviews. Remove technical references from the view.
+- Resolve PDF inputs directly from Turso on download, with explicit field/mapping
+  errors and a current-review-pending export instead of mixing historical advice.
+
+
+- Restore readable historical Decision summaries, results, concerns and suggestions;
+  keep full details in expanders and put the PDF download near the top. Historical
+  exports are explicitly marked not current, with no regeneration required.
+
+
+- Resolve screening once across Submission/Assessment/Decision/reports: six Pass
+  checks proceed, scope failures are outside, essential unknown/failures pause
+  with reasons; data-quality concerns stay visible without silently pausing Pass.
+- Link Decision snapshots to current screening ID/version/resolution hash; display
+  conflicting historical reviews as stale and require explicit regeneration.
+- Replace detailed PDF export with a readable concise one/two-page review, retaining
+  full evidence, attributes, rules, working notes and provenance in the app/database.
+
+
+- Correct Decision readiness: check saved records directly regardless of opened
+  tabs. Paused screening is reviewable with constrained clarification/referral
+  actions, while missing/stale upstream records still block GPT before any charge.
+
+
+- Check Submission screening and all saved Assessment prerequisites before any
+  Decision GPT request or write; show specific completion reminders and block
+  regeneration while prerequisites remain unresolved.
+
+
+- Fix Decision review reference failures by constraining structured output to exact
+  saved reference IDs; keep failed-attempt errors visible and preserve all prior runs.
+
+
+- Decision adds explicit saved-first, evidence-linked GPT reviews, immutable human
+  workflow decisions and local saved-record A4 PDF reports. Current upstream checks,
+  owner restrictions, version history, duplicate prevention and save-only recovery
+  preserve the existing Submission and Assessment workflows.
+
+
+- Assessment uses four readable top-stage actions with one active highlight and
+  no duplicate lower navigation. Loaded current stages are reused on return.
+- Belief review has two columns; ER/BRB distributions precede compact input tables,
+  retaining review controls, complete distributions, rule traces and residual belief.
+
+
+- Submission-only Basic information/Screening inner tabs, compact escaped tables,
+  collapsed sources/review controls and responsive selector/detail layouts.
+- Main navigation labels enlarged to 18px; inner tabs 16px and scoped Submission
+  table text 15–16px. Assessment/Decision content and underlying logic unchanged.
+
 ## 0.1.0 — 2026-11-01
 
 First local research-prototype checkpoint.

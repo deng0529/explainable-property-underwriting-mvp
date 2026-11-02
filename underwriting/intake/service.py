@@ -159,8 +159,10 @@ def run_intake(settings, proof, case, store, expected_run=None, confirmed=False,
         # Recheck Turso in the action handler, before any GPT request or schema write.
         # A database outage propagates; it is never treated as an empty history.
         report("Database", "Checking Turso history before any GPT request.")
-        latest = store.latest(case["case_id"], None, digest, successful=False)
-        candidates = store.candidates(case["case_id"], digest)
+        latest = store.latest(case["case_id"], case["submission_version"], digest, successful=False)
+        from underwriting.intake.screening import current_screening_record
+        current = current_screening_record(case,store,digest)
+        candidates = [current] if current else []
         if candidates and not confirmed:
             saved = candidates[0]
             from underwriting.intake.recovery import recover_screening, save_recovery

@@ -1,0 +1,47 @@
+# Presentation only. Model nodes/membership/weights come from decision_model.yaml.
+workflow:
+  # Physical left-to-right positions. Logical arrows keep their original order.
+  layout_rows:
+    - [pdf, intake, screening, routing, evidence]
+    - [null, null, clarification, stop, null]
+    - [brb, er, confirmation, beliefs, evidence_review]
+    - [review, decision, report, null, null]
+  nodes:
+    pdf: {label: "Broker submission PDF\nOriginal full text", role: source}
+    intake: {label: "GPT intake\nInformation + observations", role: gpt}
+    screening: {label: "Python screening\nApply configured checks", role: python}
+    routing: {label: "Screening routing", role: route}
+    clarification: {label: "Pause: clarify\nReview / re-screen updates", role: human}
+    stop: {label: "Outside demo scope\nWorkflow stops", role: stop}
+    evidence: {label: "GPT attribute evidence\nFacts, quotes, gaps, conflicts", role: gpt}
+    evidence_review: {label: "Human evidence review", role: human}
+    beliefs: {label: "GPT belief proposals\nLow / High / Unknown", role: gpt}
+    confirmation: {label: "Human belief confirmation", role: human}
+    er: {label: "Python ER aggregation\nConfigured group distributions", role: python}
+    brb: {label: "Python BRB inference\nRule matching → activation\n→ shared combine_er", role: python}
+    review: {label: "GPT Decision review\nConcerns, gaps + next action", role: gpt}
+    decision: {label: "Human decision\nSelected action + notes", role: human}
+    report: {label: "Python PDF formatting\nConcise saved report", role: python}
+  edges:
+    - [pdf, intake, ""]
+    - [intake, screening, ""]
+    - [screening, routing, ""]
+    - [routing, evidence, Proceed]
+    - [routing, clarification, Pause]
+    - [routing, stop, Outside demo scope]
+    - [pdf, evidence, Original full PDF text]
+    - [evidence, evidence_review, ""]
+    - [evidence_review, beliefs, ""]
+    - [beliefs, confirmation, ""]
+    - [confirmation, er, ""]
+    - [er, brb, Complete distributions]
+    - [brb, review, ""]
+    - [review, decision, ""]
+    - [decision, report, ""]
+  storage:
+    - Submission information and screening
+    - Source metadata and saved page text
+    - Evidence and human reviews
+    - Belief proposals and confirmations
+    - ER / BRB results
+    - Decision reviews, human decisions and saved reports

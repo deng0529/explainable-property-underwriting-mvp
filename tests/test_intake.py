@@ -148,7 +148,7 @@ controls({"case_id": "TEST-001", "submission_version": "1.0"}, "test", st.sessio
         self.data["basic_information"][5]["evidence"][0]["quote"] = "An invented quote"
         result, issues = validate_output(self.data, [TEXT], "TEST-001")
         self.assertTrue(issues)
-        self.assertEqual(derive_outcome(result["screening_checks"], issues), "Pause for clarification")
+        self.assertEqual(derive_outcome(result["screening_checks"], issues), "Proceed to assessment")
         data = response_data()
         field = next(f for f in data["basic_information"] if f["field_id"] == "buildings_reinstatement_value")
         field.update(value=20, unit=None, status="found", evidence=[EVIDENCE])
@@ -237,7 +237,7 @@ controls({"case_id": "TEST-001", "submission_version": "1.0"}, "test", st.sessio
         stages = []
         saved = self.run_action(progress=lambda stage, detail: stages.append(stage))
         self.assertEqual(saved["status"], "needs_review")
-        self.assertEqual(saved["outcome"], "Pause for clarification")
+        self.assertEqual(saved["outcome"], "Proceed to assessment")
         actual = next(field for field in saved["result"]["basic_information"] if field["field_id"] == "previous_losses")
         self.assertEqual(actual["value"][0]["loss_date"], "June 2024")
         self.assertIsNone(actual["unit"])
@@ -294,9 +294,11 @@ controls({"case_id": "TEST-001", "submission_version": "1.0"}, "test", st.sessio
             app.button(key="case:NB-2026-001:extract_and_screen").click().run()
             self.assertFalse(app.exception)
             self.assertEqual(self.request.call_count, 1)
-            self.assertIn("Test-only company", [value.value for value in app.tabs[0].text])
-            self.assertIn("7", [value.value for value in app.tabs[0].text])
+            self.assertIn("Test-only company", "\n".join(item.value for item in app.html))
+            self.assertIn('>7</td>', "\n".join(item.value for item in app.html))
             app.radio(key="case:NB-2026-001:information_category").set_value("Completeness").run()
+            app.session_state["case:NB-2026-001:submission_section"] = "Screening"
+            app.run()
             app.radio(key="case:NB-2026-001:screening_check").set_value("SC03").run()
             app.run()
             self.assertEqual(self.request.call_count, 1)
@@ -305,9 +307,9 @@ controls({"case_id": "TEST-001", "submission_version": "1.0"}, "test", st.sessio
             with patch("underwriting.ui.intake.settings_for_ui", return_value=no_key):
                 visitor = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
                 self.assertFalse(visitor.exception)
-                self.assertNotIn("Test-only company", [value.value for value in visitor.tabs[0].text])
+                self.assertNotIn("Test-only company", "\n".join(item.value for item in visitor.html))
                 visitor.button(key="case:NB-2026-001:extract_and_screen").click().run()
-                self.assertIn("Test-only company", [value.value for value in visitor.tabs[0].text])
+                self.assertIn("Test-only company", "\n".join(item.value for item in visitor.html))
                 self.assertFalse(visitor.button(key="case:NB-2026-001:extract_and_screen").disabled)
                 self.assertEqual(self.request.call_count, 1)
                 original = self.store.latest("NB-2026-001", "1.0", "test-hash")
@@ -316,7 +318,7 @@ controls({"case_id": "TEST-001", "submission_version": "1.0"}, "test", st.sessio
                     self.assertFalse(visitor.exception)
                     self.assertFalse(any("configuration differs" in item.value for item in visitor.info))
                     self.assertTrue(any("Saved with earlier settings" in item.value for item in visitor.caption))
-                    self.assertIn("Test-only company", [value.value for value in visitor.tabs[0].text])
+                    self.assertIn("Test-only company", "\n".join(item.value for item in visitor.html))
                     self.assertEqual(self.store.latest("NB-2026-001", "1.0", "test-hash"), original)
                     self.assertEqual(self.request.call_count, 1)
 

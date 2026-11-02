@@ -22,3 +22,5 @@ dist/
 *.egg-info/
 .DS_Store
 Thumbs.db
+
+.decision_pending/

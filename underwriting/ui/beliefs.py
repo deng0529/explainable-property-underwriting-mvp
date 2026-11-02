@@ -10,7 +10,7 @@ from underwriting.assessment.evidence_service import document_hash
 from underwriting.persistence.beliefs import BeliefStore
 from underwriting.assessment.belief_service import propose_beliefs, reviewed_set, current_input, pending_beliefs, retry_belief_save, confirm_belief
 from underwriting.ui.readiness import evidence_blocker
-from underwriting.ui.navigation import activate_stage
+from underwriting.ui.navigation import activate_stage, stage_button
 
 
 def active_run(view):
@@ -87,11 +87,12 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                 status.update(label="Belief proposal stopped", state="error")
                 st.error(str(error))
     button = button_slot.button if button_slot is not None else st.button
-    if button("Load proposed beliefs", key=f"{prefix}:Propose beliefs", width="stretch",
+    if stage_button(button_slot if button_slot is not None else st, "Load proposed beliefs", prefix, "Beliefs", permitted=not prerequisite and store is not None, key=f"{prefix}:Propose beliefs", width="stretch",
               help=prerequisite or "Check Turso first for this reviewed evidence; only missing proposals require a GPT request."):
-        action()
-    if prerequisite:
-        (button_slot if button_slot is not None else st).caption(prerequisite)
+        if prerequisite or not active_run(view):
+            action()
+    if st.session_state.get(prefix + ":assessment_stage", "Evidence") != "Beliefs":
+        return dict(view, settings=settings, store=store, case=case, prerequisite=prerequisite)
     st.caption("Subjective concern beliefs, not event probabilities or model confidence. Unknown is unassigned belief, not a severity grade.")
     if view["stale"]:
         st.warning("Reviewed evidence changed. Loaded proposals and their confirmations are stale and are not shown as current. Deliberately Load / Propose beliefs again.")

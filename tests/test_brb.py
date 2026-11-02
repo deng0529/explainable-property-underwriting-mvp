@@ -258,10 +258,9 @@ if st.session_state.get("brb-ui:assessment_stage") == "BRB results":
             self.assertFalse(app.exception)
             self.assertEqual(infer.call_count, 1)
             self.assertEqual(len(app.metric), 3)
-            self.assertEqual(list(app.table[0].value.columns), ["Low", "High", "Unknown"])
-            self.assertEqual(len(app.table[0].value), 1)
-            self.assertEqual(len(app.table[1].value), 1)
-            self.assertEqual(len(app.table[2].value), 9)
+            self.assertEqual(list(app.table[0].value.columns), ["Group", "Low", "High", "Unknown"])
+            self.assertEqual(len(app.table[0].value), 2)
+            self.assertEqual(len(app.table[1].value), 9)
             self.assertFalse(any(item.label == "Calculation details" for item in app.expander))
             self.assertEqual(len(app.json), 0)
             self.assertTrue(any("All 9 rules are active" in item.value for item in app.caption))
@@ -272,7 +271,7 @@ if st.session_state.get("brb-ui:assessment_stage") == "BRB results":
             self.assertEqual(infer.call_count, 1)
             app.button(key="brb-ui:calculate_brb").click().run()
             self.assertEqual(infer.call_count, 1)
-            self.assertTrue(any("no recalculation" in item.value for item in app.caption))
+            self.assertTrue(any("Result source:" in item.value for item in app.caption))
             model = copy.deepcopy(get_model())
             model["brb"]["rules"][0]["rule_weight"] = 2
             with patch("underwriting.ui.brb.get_model", return_value=model):
@@ -286,5 +285,5 @@ if st.session_state.get("brb-ui:assessment_stage") == "BRB results":
                 self.assertFalse(app.exception)
                 self.assertEqual(len(app.metric), 3)
                 self.assertTrue(any("hidden only by the display threshold" in item.value for item in app.caption))
-                self.assertEqual(len(app.table), 3)  # Two ER comparison tables and complete rules.
-                self.assertEqual(len(app.table[2].value), 9)
+                self.assertEqual(len(app.table), 2)  # One ER comparison table and complete rules.
+                self.assertEqual(len(app.table[1].value), 9)

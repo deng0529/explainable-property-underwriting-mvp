@@ -73,7 +73,7 @@ class SavedFirstTests(unittest.TestCase):
         with patch("underwriting.ui.intake.settings_for_ui", return_value=self.settings), \
              patch("underwriting.ui.intake.source_context", return_value=("test-hash", [TEXT])), \
              patch("underwriting.ui.intake.TursoStore", return_value=self.store), \
-             patch.object(self.store, "candidates", side_effect=StoreError("Mock database outage")):
+             patch.object(self.store, "latest", side_effect=StoreError("Mock database outage")):
             view = load_view(self.case, query=True)
             self.assertIn("outage", view["error"])
             self.assertIsNone(view["saved"])

@@ -1,0 +1,83 @@
+/* Streamlit-authored keys/roles only; no generated CSS class selectors. */
+.st-key-active_workspace [role="tab"],
+.st-key-active_workspace [role="tab"] p {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Inner labels and all remaining presentation are restricted to Submission. */
+.st-key-submission_presentation [role="tab"],
+.st-key-submission_presentation [role="tab"] p {
+  font-size: 16px;
+  font-weight: 600;
+}
+.st-key-submission_presentation [data-testid="stMarkdownContainer"] p,
+.st-key-submission_presentation [data-testid="stText"] {
+  font-size: 16px;
+  line-height: 1.45;
+}
+.st-key-submission_presentation h2,
+.st-key-submission_presentation h3 {
+  font-size: 20px;
+  font-weight: 600;
+  padding-top: 0.15rem;
+  padding-bottom: 0.25rem;
+}
+.st-key-submission_presentation [data-testid="stCaptionContainer"] p {
+  font-size: 15px;
+  line-height: 1.4;
+}
+.st-key-submission_presentation [data-testid="stVerticalBlock"] {
+  gap: 0.65rem;
+}
+.submission-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: inherit;
+  font-family: inherit;
+  font-size: 15.5px;
+  line-height: 1.45;
+  margin: 0;
+}
+.submission-table th,
+.submission-table td {
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid rgba(128, 140, 160, 0.22);
+}
+.submission-table thead th {
+  font-weight: 600;
+  background: var(--secondary-background-color, #f3f5f8);
+}
+.submission-table tbody tr:nth-child(even) {
+  background: rgba(128, 140, 160, 0.035);
+}
+.submission-fields-table td:last-child {
+  color: inherit;
+  font-size: 15px;
+}
+@media (max-width: 900px) {
+  .st-key-submission_basic_workspace [data-testid="stHorizontalBlock"],
+  .st-key-submission_screening_workspace [data-testid="stHorizontalBlock"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .st-key-submission_basic_workspace [data-testid="stColumn"],
+  .st-key-submission_screening_workspace [data-testid="stColumn"] {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+@media (max-width: 600px) {
+  .submission-table th, .submission-table td { padding: 0.4rem 0.45rem; }
+  .submission-losses-table colgroup, .submission-losses-table thead { display: none; }
+  .submission-losses-table, .submission-losses-table tbody,
+  .submission-losses-table tr { display: block; width: 100%; }
+  .submission-losses-table td { display: grid; grid-template-columns: minmax(7rem, 35%) 1fr; gap: 0.5rem; }
+  .submission-losses-table td::before { content: attr(data-label); font-weight: 600; }
+}

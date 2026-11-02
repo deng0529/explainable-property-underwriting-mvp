@@ -1,5 +1,6 @@
 # Documentation
 
+- [Streamlit Community Cloud: public saved-results viewer](community-cloud.md)
 - [Architecture and package responsibilities](architecture.md)
 - [Project background](project-overview.md)
 - [Submission extraction, screening and review](submission-intake.md)

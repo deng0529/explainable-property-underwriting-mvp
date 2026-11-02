@@ -1,14 +1,14 @@
 """Explicit BRB action, distributions, activated-rule trace and numerical explanation."""
 import streamlit as st
 
-from underwriting.ui.navigation import activate_stage
+from underwriting.ui.navigation import activate_stage, stage_button
 from underwriting.models.brb import ENGINE_VERSION
 from underwriting.models.brb_adapter import prepare_brb_inputs
 from underwriting.assessment.brb_service import calculate_brb, er_result_hash, rule_configuration_hash
 from underwriting.persistence.brb import BRBStore
 from underwriting.configuration.decision_model import get_model, effective_er_model_hash
 from underwriting.models.er import ENGINE_VERSION as ER_ENGINE_VERSION
-from underwriting.ui.intake import settings_for_ui
+from underwriting.ui.intake import settings_for_ui, authorised
 from underwriting.persistence.intake import StoreError
 from underwriting.ui.brb_presentation import input_support_summary, strongest_rule_summary, activation_summary
 
@@ -36,8 +36,13 @@ def brb_controls(case, prefix, er_view, button_slot):
     if view["run"]:
         old = view["run"]
         view["stale"] = view.get("invalidated", False) or bool(er_view.get("stale")) or not er_run or old["er_result_hash"] != er_result_hash(er_run) or old["rule_configuration"]["sha256"] != rule_configuration_hash(model) or old["engine_version"] != ENGINE_VERSION
-    if button_slot.button("Calculate overall BRB assessment", key=f"{prefix}:calculate_brb", width="stretch",
-                          disabled=bool(blocker), help=blocker or "Load a matching saved BRB result or calculate and save numerically. No GPT call."):
+    if stage_button(button_slot, "Calculate overall BRB assessment" if authorised(settings) else "Load saved overall assessment", prefix, "BRB results", permitted=not blocker, key=f"{prefix}:calculate_brb", width="stretch",
+                          disabled=not model["brb"]["enabled"] or not model["brb"]["configured"], help=blocker or "Load a matching saved BRB result or calculate and save numerically. No GPT call."):
+        if blocker:
+            button_slot.warning(blocker)
+            return view
+        if view["run"] and not view["stale"]:
+            return view
         try:
             with st.status("BRB · checking current ER results and saved assessments", expanded=True) as status:
                 result, reused = calculate_brb(settings, case, er_run, BRBStore(settings), model)
@@ -48,8 +53,6 @@ def brb_controls(case, prefix, er_view, button_slot):
             if isinstance(error, ValueError) and view.get("run"):
                 view.update(stale=True, invalidated=True)
             st.error(str(error))
-    if blocker:
-        button_slot.caption(blocker)
     return view
 
 
@@ -75,20 +78,27 @@ def brb_results(view):
         return
     result, config = run["result"], run["decision_model_snapshot"]["brb"]
     st.subheader("Overall BRB assessment")
-    st.caption(config["assumptions"])
-    st.caption("Result source: " + view.get("origin", "Saved assessment"))
     if result["status"] == "no_matching_rules":
         st.warning(result["message"])
     else:
         for column, (state, belief) in zip(st.columns(len(result["state_beliefs"])), result["state_beliefs"].items()):
-            column.metric(state.title(), f"{belief:.2f}")
-        st.text(f"Residual unassigned belief: {result['residual_unassigned']:.2f}")
+            column.metric({"low": "Low concern", "high": "High concern", "unknown": "Unknown"}.get(state, state.title()), f"{belief:.2f}")
+        if result["residual_unassigned"] > run["decision_model_snapshot"]["tolerances"]["distribution_sum"]:
+            st.text(f"Residual unassigned belief: {result['residual_unassigned']:.2f}")
+        from decimal import Decimal
+        values = {state: Decimal(str(belief)) for state, belief in result["state_beliefs"].items()}
+        largest = max(values.values())
+        tolerance = Decimal(str(run["decision_model_snapshot"]["tolerances"].get("assessment_tie", run["decision_model_snapshot"]["tolerances"]["distribution_sum"])))
+        winners = [state for state, belief in values.items() if largest - belief <= tolerance]
+        label = "Mixed assessment" if len(winners) > 1 else {"low": "Low concern", "high": "High concern", "unknown": "Insufficient information"}.get(winners[0], winners[0].title())
+        st.markdown(f"**Most supported: {label}** · {largest:.2f}")
+    st.caption("Result source: " + view.get("origin", "Saved assessment"))
+    with st.expander("Model assumptions"):
+        st.caption(config["assumptions"])
     st.caption("Unknown is an explicit insufficient-information state, not Medium severity. Residual unassigned belief is separate. Display rounding does not change the calculation.")
     st.markdown("**Fire and Security ER inputs**")
-    for column, (identifier, values) in zip(st.columns(len(result["input_distributions"])), result["input_distributions"].items()):
-        with column, st.container(border=True):
-            st.markdown("**" + identifier.title() + " ER**")
-            st.table([{state.title(): f"{value:.2f}" for state, value in values.items()}])
+    st.table([{"Group": identifier.title(), **{state.title(): f"{value:.2f}" for state, value in values.items()}}
+              for identifier, values in result["input_distributions"].items()])
     small = [f"{identifier.title()} {state.title()} = {value:.3g}" for identifier, values in result["input_distributions"].items() for state, value in values.items() if 0 < value < .005]
     if small:
         st.caption("Nonzero inputs rounded to 0.00: " + "; ".join(small) + ". Their full values still enter rule matching.")

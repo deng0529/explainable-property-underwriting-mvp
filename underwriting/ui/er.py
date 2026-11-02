@@ -10,7 +10,7 @@ from underwriting.assessment.er_service import calculate_er, input_belief_hash, 
 from underwriting.persistence.er import ERStore
 from underwriting.ui.er_presentation import group_presentation, describe_er_result
 from underwriting.ui.readiness import belief_blocker
-from underwriting.ui.navigation import activate_stage
+from underwriting.ui.navigation import activate_stage, stage_button
 
 
 def er_controls(case, prefix, belief_view, button_slot):
@@ -36,25 +36,24 @@ def er_controls(case, prefix, belief_view, button_slot):
                 values = {identifier: events[identifier]["values"] for identifier in sorted(needed)}
                 current_hash = input_belief_hash(digest, proposal["reviewed_hash"], proposal["run_id"], values)
                 view["stale"] |= current_hash != run["input_belief_hash"]
-    if button_slot.button("Calculate Fire / Security ER", disabled=not model["er"]["enabled"],
+    owner = authorised(settings)
+    if stage_button(button_slot, "Calculate Fire/Security ER" if owner else "Load saved Fire/Security results", prefix, "ER results", permitted=not prerequisite and not settings.missing(paid=False) and digest != "source-unavailable", disabled=not model["er"]["enabled"],
                           key=f"{prefix}:Calculate assessment", width="stretch", help=prerequisite or "Calculate configured ER groups from current confirmed beliefs; no GPT request."):
         if prerequisite:
-            button_slot.warning("Please first load attribute evidence and complete its reviews, then load proposed beliefs and confirm them, then calculate the ER results. " + prerequisite)
+            button_slot.warning(prerequisite)
         elif settings.missing(paid=False):
             button_slot.error("Cannot calculate ER. Missing configuration: " + ", ".join(settings.missing(paid=False)))
         elif digest == "source-unavailable":
             button_slot.error("Company PDF unavailable. Restore the source document before calculating ER.")
-        else:
+        elif not view["run"] or view["stale"]:
             try:
-                with st.status("ER · checking confirmed inputs, calculating and saving", expanded=True) as status:
+                with st.status("ER · checking confirmed inputs, calculating and saving" if owner else "ER · loading saved results", expanded=True) as status:
                     result = calculate_er(settings, case, ERStore(settings), model)
                     view.update(run=result, stale=False)
                     activate_stage(st.session_state, prefix, "ER results")
                     status.update(label="ER calculated and saved" if authorised(settings) else "Saved ER results loaded", state="complete", expanded=False)
             except (ValueError, ArithmeticError, OSError, PermissionError, StoreError) as error:
                 st.error(str(error))
-    if prerequisite:
-        button_slot.caption(prerequisite)
     return view
 
 
@@ -69,23 +68,27 @@ def er_results(view):
         with column, st.container(border=True):
             st.markdown("**" + definition["label"] + " ER**")
             result = run["groups"].get(identifier) if run else None
+            metric_columns = st.columns(len(model["grades"]["order"]) + 1)
+            for metric, grade in zip(metric_columns, model["grades"]["order"]):
+                metric.metric(model["grades"]["definitions"][grade]["label"],
+                              f"{result['assigned_beliefs'][grade]:.2f}" if result else "—")
+            metric_columns[-1].metric("Unknown", f"{result['unassigned_belief']:.2f}" if result else "—")
             if result:
-                rows, explanations = group_presentation(run, identifier)
-                st.caption("Human-confirmed attribute inputs")
-                st.table(rows)
-                st.markdown("**Aggregated result**")
                 description = describe_er_result(result, model)
-                st.markdown(f"**{description['label']}** · {description['winning_belief_degree']:.2f}")
+                st.markdown(f"**Most supported: {description['label']}** · {description['winning_belief_degree']:.2f}")
                 if len(description["largest_components"]) > 1:
                     st.caption("Tied largest components within tolerance: " + ", ".join(description["largest_components"]) + ". Degree shown is the largest component.")
-            for grade in model["grades"]["order"]:
-                st.text(model["grades"]["definitions"][grade]["label"] + ": " + (f"{result['assigned_beliefs'][grade]:.2f}" if result else "—"))
-            st.text("Unknown (unassigned): " + (f"{result['unassigned_belief']:.2f}" if result else "—"))
+                rows, explanations = group_presentation(run, identifier)
+                rows = [{("Effective weight" if key == "Weight" else "Low" if key == "Low concern" else "High" if key == "High concern" else key): value for key, value in row.items()} for row in rows]
+                st.caption("Human-confirmed attribute inputs")
+                st.table(rows)
             if result:
                 st.markdown("**What drives this result**")
                 for explanation in explanations:
                     st.caption(explanation)
                 st.caption("Input support compares belief × weight. ER combines inputs nonlinearly; these are not additive contributions to the result.")
+                with st.expander("Calculation details"):
+                    st.json(result)
             else:
                 st.caption("Not calculated" if not view["stale"] else "Stale")
     if run:

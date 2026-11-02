@@ -1,4 +1,4 @@
-# Architecture · version 0.1.0
+# Architecture · version 0.2.0
 
 The project is a local Streamlit application run from its repository checkout.
 `app.py` is the stable launch entry point and calls `underwriting.ui.app.main()` on
@@ -11,6 +11,7 @@ underwriting/
   documents/                  Original PDF reading and page rendering
   intake/                     Extraction/screening schemas, services and human review
   assessment/                 Evidence, beliefs, ER/BRB orchestration and validation
+  decision/                   Saved-input snapshots, review, human decisions and reports
   models/                     Pure shared ER core, BRB inference and configuration adapters
   persistence/                Owner-gated append-only Turso repositories
   ui/                         Workspace composition, controls, state and explanations
@@ -38,7 +39,7 @@ docs/                         Current technical documentation and archived check
 - **Persistence:** repositories share the Turso transport and enforce local-owner writes.
   Saved runs and human review events are appended, not overwritten. Public-readonly
   mode cannot start paid calls or calculate/save on a cache miss.
-- **UI:** `ui.app` composes three tabs. Evidence, Beliefs, ER and BRB are separate
+- **UI:** `ui.app` composes four tabs, including the read-only System overview. Evidence, Beliefs, ER and BRB are separate
   Assessment views. Navigation and reset operate on session state; presentation
   helpers explain saved numbers without calling GPT or recalculating assessments.
 
@@ -68,3 +69,44 @@ The tests use mocked GPT/services and in-memory SQLite, plus the supplied synthe
 PDF for document/UI checks. The BRB directional grid checks 640 comparisons and
 reports counterexamples without silently changing the configured rules. No live
 database migration/write, paid request or deployment is part of this verification.
+
+## Decision records
+
+`decision.snapshot` reads the existing records without rerunning upstream stages.
+Submission ID is the catalogue submission version scoped by company/case ID and
+source hash; no competing company/submission tables are introduced. Source records
+remain in their original tables. Snapshot references link intake → reviewed evidence
+→ belief proposal/confirmation events → compatible ER → matching BRB.
+
+`decision_review_runs` holds the immutable snapshot, hashes, prompt/model metadata,
+raw response, usage and versioned review JSON. A running audit may finalise once;
+completed/failed records are preserved. `underwriting_decisions` appends human
+workflow actions and self-referenced supersession links with a foreign key to the
+saved review. It does not duplicate Submission human reviews. Reviewer labels are
+user-entered context, not authenticated identity.
+
+Decision writes use an FK-enabled Hrana transaction with rollback; a shared atomic
+claim prevents duplicate paid requests across sessions. Local pending responses are
+ignored by Git and recovered without another GPT call. No schema writes occur at
+startup: the owner action initialises only the necessary Decision tables. Existing
+upstream tables are neither migrated nor duplicated.
+
+PDF export is deferred until the download click, rechecks current upstream records,
+loads the saved human decision and uses a deterministic PyMuPDF template. Unsaved
+browser drafts never enter the saved report. See `docs/decision-workflow.md`.
+
+## Read-only explanatory diagrams
+
+`assessment.overview` resolves partially completed saved stages using the same
+`current_input`, `current_confirmed` and `current_er_inputs` compatibility checks as
+the existing workflow. `persistence.overview` adds SELECT-only stale-record lookups
+against existing tables, scoped by company and submission; no schema is created.
+`ui.overview_diagrams` constructs escaped Graphviz labels and explicit ranks from
+configuration. `ui.overview` reads only while its hierarchy is open; the generic
+workflow needs no database. Connection failures preserve both configured diagrams
+with hierarchy values unavailable. No upstream stage service is invoked.
+
+The workflow renderer is now `ui.workflow_svg`: deterministic SVG geometry follows
+the configured rows/edges, escapes all labels and contains no executable code. Native
+`st.image` displays it. Endpoint tests verify that arrows meet source/target boundaries.
+The hierarchy continues to use Graphviz inside a centred, bounded native container.

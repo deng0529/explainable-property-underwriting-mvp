@@ -1,7 +1,7 @@
 # Explainable Property Underwriting MVP
 
-**Version 0.1.0** — a local research prototype with Submission, Assessment and
-Decision workspaces. The supplied Northbridge case and demonstration rules are
+**Version 0.2.0** — a local research prototype with Submission, Assessment,
+Decision and System overview workspaces. The supplied Northbridge case and demonstration rules are
 synthetic research assumptions, not Protector rules, validated loss probabilities
 or insurance acceptance criteria.
 
@@ -33,6 +33,13 @@ The equivalent direct command remains:
 The app is intended to run from this checkout; no editable package installation,
 deployment, database migration command, or model training is required.
 
+## Share the app online
+
+Use [the Streamlit Community Cloud guide](docs/community-cloud.md) to deploy
+`cloud_app.py` from GitHub. This entry point enforces saved-results viewing only;
+provide Turso credentials in Cloud Secrets and do not add an OpenAI key.
+Your local `app.py` owner workflow stays unchanged.
+
 ## Workflow
 
 - **Submission:** company selection, original PDF review/download, eight information
@@ -42,8 +49,15 @@ deployment, database migration command, or model training is required.
 - **Assessment:** Load attribute evidence → human evidence review → Load proposed
   beliefs → human belief confirmation → Calculate Fire / Security ER → Calculate
   overall BRB assessment. Each stage shows its own view, with explanations from
-  actual inputs and activated rules. Selections do not trigger paid requests.
-- **Decision:** visible placeholders; decision recording/export remain disabled.
+  actual inputs and activated rules. The four top buttons select the active stage
+  (red); review/completion status is shown separately. Returning to an already
+  loaded current stage reuses its session results. Beliefs use selector/detail
+  columns, and ER/BRB summaries appear above their input tables. Selections do
+  not trigger paid requests.
+- **Decision:** explicitly load/generate a saved-input review, inspect evidence-linked
+  concerns and information requests, record a human workflow action, and download a
+  concise one/two-page A4 PDF from saved records. No action is preselected. Opening or rerunning the
+  tab never queries review results or calls GPT. See [Decision workflow](docs/decision-workflow.md).
 
 **Reset workspace**, the first company-dropdown option, clears only the active
 tab's displayed data and drafts. Other tabs and saved records remain unchanged.
@@ -60,6 +74,7 @@ underwriting/
   documents/              Original PDF reading and rendering
   intake/                 Extraction, screening, recovery and human review services
   assessment/             Evidence, belief and ER/BRB orchestration
+  decision/               Saved snapshots, review validation, human decisions and PDFs
   models/                 Shared analytical ER, BRB inference and adapters
   persistence/            Append-only Turso repositories
   ui/                     Tab renderers, controls, state and presentation helpers
@@ -75,6 +90,11 @@ See [architecture](docs/architecture.md), [documentation index](docs/README.md),
 [project background](docs/project-overview.md) and [changelog](CHANGELOG.md).
 
 ## Configuration and credentials
+
+Submission uses Basic information and Screening inner tabs, compact escaped HTML
+tables and collapsed sources/review controls. Scoped styles are in
+`underwriting/ui/styles/submission.css`: main navigation labels are 18px, inner
+tabs 16px and Submission tables 15–16px. Other workspaces retain their typography.
 
 | Location | Contents |
 | --- | --- |
@@ -156,3 +176,67 @@ PDF access, shared ER and BRB equations. The directional grid reports counterexa
 rather than silently changing rules. No paid call or live database write is part of
 verification. Training, optimisation backends, authentication and deployment are
 outside this version.
+
+Screening workflow status is resolved centrally from the actual six checks and any
+explicit reasoned human override. Six Pass checks mean Proceed; non-blocking extraction
+validation concerns remain visible separately. Decision snapshots include the selected
+screening record/version/hash; older conflicting reviews are historical until explicitly
+regenerated. The concise PDF omits working notes, attribute/rule details and appendices;
+full saved evidence and numerical/history records remain unchanged.
+
+Decision now separates the current review from dated historical content. One AI review
+summary is shown; historical recommendations stay in History. Download review report
+loads its inputs directly from Turso, even after restart and without opening other
+tabs. If only a stale AI review exists, the explicit Load / Generate action creates a new
+current review from complete saved upstream inputs; the old review is never substituted.
+Absent saved field mappings/query errors are never labelled Not provided.
+
+Decision uses AI review summary / Human decision inner tabs. Its explicit Load /
+Generate button loads a matching current review, or generates once from complete
+saved current inputs. PDF artifacts are versioned BLOBs in Turso `decision_reports`,
+keyed by review/snapshot/template/human decision. Download retrieves saved bytes;
+missing PDF and report-only failures recover from saved AI content without GPT.
+Changing a saved human decision or report template creates only a new PDF version.
+
+A repeat Decision load reuses the successful `decision_review_runs` row for the same
+saved upstream snapshot; the UI explicitly says Loaded from database — no GPT call.
+New ER/BRB run IDs and timestamps alone do not require a new Decision review.
+A content check reuses the review and PDF when the source, substantive information
+and actual assessment content are unchanged, even after rerunning all stages.
+
+Decision reuse keeps two identities: the original full snapshot hash for audit integrity,
+and a content hash for paid-call reuse. Content identity excludes run/event IDs,
+timestamps and repeated confirmations, but retains source bytes, case/submission,
+provided facts, source evidence, substantive human corrections/notes, screening,
+confirmed beliefs, model settings and actual ER/BRB distributions. Old saved reviews
+are compared on read without rewriting their snapshots. No approximate paraphrase
+matching or rounded-number comparison is used. Explicit confirmed regeneration is
+still a deliberate override; ordinary Load uses the saved content.
+
+## System overview diagrams
+
+The fourth main tab contains an Assessment hierarchy and MVP workflow. The hierarchy
+reads saved current human confirmations and compatible ER/BRB results directly, even
+in a fresh session. AI-only proposals are explicitly unconfirmed; missing, stale and
+unavailable values are labelled, and stale numbers are withheld. Opening either view
+never calls GPT, calculates results, confirms records or writes to Turso.
+
+Model labels, attributes, memberships and weights come from `config/decision_model.yaml`.
+Workflow labels, links and the storage legend are presentation configuration in
+`config/system_overview.yaml`, loaded by the existing safe YAML reader. Hierarchy construction
+is separate in `underwriting/ui/overview_diagrams.py`; `graphviz` is the only added
+dependency. Streamlit renders DOT in the browser; no Graphviz system executable is needed.
+Percentages and weights are rounded only for display. The original saved data and
+complete distributions remain unchanged. Use the chart fullscreen control on small screens.
+
+The overview uses a compact hierarchy and a row-by-row snake workflow. Edit
+`workflow.layout_rows` in `config/system_overview.yaml` to change diagram placement;
+these positions never change execution order or the saved analysis. Diagram rendering
+is lightweight and uses saved results directly; diagram images are not duplicated in
+Turso. No GPT request or numerical recalculation is needed to redraw them.
+
+Both overview drawings are centred and width-limited for laptop viewing. Detailed
+explanations remain in collapsed sections. The workflow uses escaped SVG in the native
+Streamlit image viewer (`underwriting/ui/workflow_svg.py`) so arrow endpoints touch
+box boundaries precisely; its rows and logical edges still come from the same YAML.
+The hierarchy retains Graphviz. No scripts, new dependency or persistence change is involved.
