@@ -1,5 +1,6 @@
 """Existing-database mode: all calls mocked, no real credentials or mutations."""
 import copy
+import os
 import unittest
 from dataclasses import replace
 from unittest.mock import patch,Mock
@@ -14,7 +15,7 @@ import test_beliefs as fixtures
 class ReadonlyTests(unittest.TestCase):
     def test_explicit_file_uses_database_only_and_does_not_copy_or_export_secrets(self):
         cfg=copy.deepcopy(get_config());cfg['services'].update(mode='turso_readonly',credential_env_path='explicit.env')
-        with patch('underwriting.configuration.access.get_config',return_value=cfg),patch('underwriting.configuration.access.load_dotenv'),patch('underwriting.configuration.access.dotenv_values',return_value={'TURSO_DATABASE_URL':'https://test.invalid','TURSO_AUTH_TOKEN':'mock-db-token','OPENAI_API_KEY':'must-not-use'}) as values:
+        with patch.dict(os.environ,{},clear=True),patch('underwriting.configuration.access.get_config',return_value=cfg),patch('underwriting.configuration.access.load_dotenv'),patch('underwriting.configuration.access.dotenv_values',return_value={'TURSO_DATABASE_URL':'https://test.invalid','TURSO_AUTH_TOKEN':'mock-db-token','OPENAI_API_KEY':'must-not-use'}) as values:
             settings=load_settings()
         values.assert_called_once_with('explicit.env')
         self.assertEqual(settings.api_key,'');self.assertEqual(settings.database_token,'mock-db-token')
@@ -22,6 +23,24 @@ class ReadonlyTests(unittest.TestCase):
         self.assertNotIn('mock-db-token',repr(settings))
         with self.assertRaises(PermissionError):require_owner(replace(settings,access_mode='local_owner'))
         with self.assertRaises(PermissionError):require_test_services(settings,generation=True)
+
+    def test_cloud_secrets_work_without_local_path_or_gpt_credential(self):
+        cfg=copy.deepcopy(get_config());cfg['services']['credential_env_path']='C:/not-on-cloud/.env'
+        with patch('underwriting.configuration.access.get_config',return_value=cfg),patch('underwriting.configuration.access.load_dotenv'),patch.dict(os.environ,{'UNDERWRITING_PROFILE':'public_readonly'},clear=True),patch('underwriting.configuration.access.dotenv_values',side_effect=AssertionError('Cloud must not open local credential path')):
+            settings=load_settings({'TURSO_DATABASE_URL':'https://cloud-test.invalid','TURSO_AUTH_TOKEN':'mock-cloud-token','OPENAI_API_KEY':'must-not-use'})
+            self.assertEqual(settings.database_url,'https://cloud-test.invalid')
+            self.assertEqual(settings.database_token,'mock-cloud-token')
+            self.assertEqual(settings.api_key,'');self.assertEqual(settings.missing(),[])
+            missing=load_settings({})
+            self.assertEqual(missing.missing(),['TURSO_DATABASE_URL','TURSO_AUTH_TOKEN'])
+        with self.assertRaises(PermissionError):require_owner(settings)
+        with self.assertRaises(PermissionError):require_test_services(settings,generation=True)
+
+    def test_readonly_yaml_does_not_require_windows_file_on_cloud(self):
+        from underwriting.configuration.settings import validate
+        cfg=copy.deepcopy(get_config());cfg['services']['credential_env_path']='C:/not-on-cloud/.env'
+        validate(cfg)
+        del cfg['services']['credential_env_path'];validate(cfg)
 
     def test_select_only_transport_blocks_writes_batches_and_gpt_before_network(self):
         settings=Settings(database_url='https://test.invalid',database_token='mock',service_mode='turso_readonly',access_mode='local_owner')

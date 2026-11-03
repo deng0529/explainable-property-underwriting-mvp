@@ -220,10 +220,10 @@ def validate(data):
     services = required(data, 'services', dict)
     if services.get('mode') not in {'offline','test_turso','turso_readonly'}:
         raise ConfigError('services.mode: use offline, test_turso or turso_readonly.')
-    if services['mode']=='turso_readonly':
-        credential_path = Path(text(services,'credential_env_path','services'))
-        if not credential_path.is_absolute() or not credential_path.is_file():
-            raise ConfigError('services.credential_env_path: an existing absolute .env path is required for explicit read-only access.')
+    if 'credential_env_path' in services:
+        text(services,'credential_env_path','services')
+    # This optional local path need not exist on Cloud. Credentials are resolved
+    # at the access boundary, with Cloud secrets/environment taking precedence.
     database_path = resolve_path(text(services,'local_database_path','services'))
     if not database_path.is_relative_to(ROOT / '.runtime'):
         raise ConfigError('services.local_database_path must remain under this checkout .runtime/.')

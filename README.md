@@ -1,3 +1,18 @@
+For Streamlit Cloud, deploy `cloud_app.py` from `feature/v2-reliability`.
+In the app's Secrets settings, supply TOML with quoted values:
+
+```toml
+TURSO_DATABASE_URL = "libsql://YOUR-DATABASE.turso.io"
+TURSO_AUTH_TOKEN = "YOUR-TOKEN"
+```
+
+Cloud reads these secrets directly and ignores the optional local
+`services.credential_env_path`. No `.env` upload or GPT key is needed.
+Missing credentials are reported by setting name, never by value.
+The shared database remains SELECT-only; generation and writes stay disabled.
+Locally, the explicitly configured existing `.env` still supplies database
+credentials when they were not supplied through secrets/environment.
+
 Current local configuration uses `services.mode: turso_readonly`: it reads the
 existing Turso database through the explicitly configured `credential_env_path`.
 Only database credential names are used from that file; GPT credentials are not

@@ -26,8 +26,9 @@ class Settings:
     allowed_test_database_hosts: tuple = ()
 
     def missing(self, paid=True):
-        pairs = [] if self.service_mode == "offline" else [("V2_TURSO_DATABASE_URL", self.database_url), ("V2_TURSO_AUTH_TOKEN", self.database_token)]
-        if paid:
+        prefix = "" if self.service_mode == "turso_readonly" else "V2_"
+        pairs = [] if self.service_mode == "offline" else [(prefix+"TURSO_DATABASE_URL", self.database_url), (prefix+"TURSO_AUTH_TOKEN", self.database_token)]
+        if paid and self.service_mode != "turso_readonly":
             pairs += [("V2_OPENAI_API_KEY", self.api_key), ("llm.model", self.model)]
         return [name for name, value in pairs if not value]
 
@@ -45,10 +46,18 @@ def load_settings(secrets=None):
     configuration = get_config()
     llm = configuration["llm"]
     if configuration['services']['mode']=='turso_readonly':
-        # Explicit user-selected source, never an offline/test-mode fallback.
-        values=dotenv_values(configuration['services']['credential_env_path'])
+        # Public Cloud runs never open a developer's optional Windows path.
+        # Only database credentials are selected; GPT remains disabled.
+        def supplied(*names):
+            return next((str(source[name]) for source in (secrets or {},os.environ)
+                         for name in names if source.get(name)), '')
+        names=(('V2_TURSO_DATABASE_URL','TURSO_DATABASE_URL'),('V2_TURSO_AUTH_TOKEN','TURSO_AUTH_TOKEN'))
+        values={}
+        local_path=configuration['services'].get('credential_env_path')
+        if local_path and os.environ.get('UNDERWRITING_PROFILE')!='public_readonly' and not all(supplied(*pair) for pair in names):
+            values=dotenv_values(local_path)
         def credential(*names):
-            return next((values[name] for name in names if values.get(name)), '')
+            return supplied(*names) or next((values[name] for name in names if values.get(name)), '')
         return Settings('',llm['model'] or '',credential('V2_TURSO_DATABASE_URL','TURSO_DATABASE_URL'),
                         credential('V2_TURSO_AUTH_TOKEN','TURSO_AUTH_TOKEN'),'public_readonly',
                         llm['timeout_seconds'],dict(llm['generation']),'turso_readonly')
