@@ -263,7 +263,7 @@ if st.session_state.get("brb-ui:assessment_stage") == "BRB results":
             self.assertEqual(len(app.table[0].value), 2)
             self.assertEqual(len(app.table[1].value), 9)
             self.assertFalse(any(item.label == "Calculation details" for item in app.expander))
-            self.assertEqual(len(app.json), 1)
+            self.assertEqual(len(app.json), 0)
             self.assertTrue(any("All 9 rules are active" in item.value for item in app.caption))
             self.assertEqual(app.session_state["brb-ui:assessment_stage"], "BRB results")
             with patch.object(store, "execute", side_effect=AssertionError("Navigation must not query/write")):

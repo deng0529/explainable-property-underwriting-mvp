@@ -63,6 +63,40 @@ class ReadonlyTests(unittest.TestCase):
             self.assertEqual(current_input(fixture.case,fixture.store)[3],legacy)
         self.assertNotEqual(legacy,modern)
 
+    def test_readonly_review_checks_one_snapshot_and_defers_pdf_until_download(self):
+        import test_decision as decision_fixtures
+        from underwriting.decision.service import load_generate
+        from underwriting.decision.snapshot import assemble_snapshot
+        fixture=decision_fixtures.DecisionTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        fixture.generate()
+        readonly=replace(fixture.settings,service_mode='turso_readonly',access_mode='public_readonly')
+        observed=[]
+        with patch('underwriting.decision.service.assemble_snapshot',wraps=assemble_snapshot) as snapshots,patch('underwriting.decision.reports.attempt_report',side_effect=AssertionError('PDF must wait for download')),patch('underwriting.intake.service.OpenAI',side_effect=AssertionError('No GPT')):
+            run,origin=load_generate(readonly,fixture.case,fixture.store,on_snapshot=observed.append)
+        self.assertEqual(run['status'],'succeeded');self.assertIn('Turso database',origin)
+        self.assertEqual(snapshots.call_count,1);self.assertEqual(len(observed),1)
+
+    def test_connection_reused_but_every_query_still_checks_database(self):
+        from unittest.mock import MagicMock
+        settings=Settings(database_url='https://test.invalid',service_mode='turso_readonly')
+        store=DecisionStore(settings)
+        transport=Mock();response=Mock()
+        response.json.return_value={'results':[{'type':'ok','response':{'result':{'rows':[]}}}]}
+        transport.post.return_value=response
+        manager=MagicMock();manager.__enter__.return_value=transport
+        with patch('requests.Session',return_value=manager) as sessions,patch('requests.post',side_effect=AssertionError('Use the shared connection')):
+            with store.read_connection():
+                store.execute('SELECT 1')
+                with store.read_connection():store.execute('SELECT 2')
+            self.assertIsNone(store._read_session)
+        self.assertEqual(sessions.call_count,1);self.assertEqual(transport.post.call_count,2)
+        manager.__exit__.assert_called_once()
+
+    def test_diagnostics_not_rendered_in_review_interface(self):
+        from streamlit.testing.v1 import AppTest
+        app=AppTest.from_string("from underwriting.ui.diagnostics import render\nrender({'run':{'run_id':'safe','status':'completed'}},'Evidence')").run()
+        self.assertFalse(app.exception);self.assertEqual(len(app.expander),0);self.assertEqual(len(app.json),0)
+
     def test_er_legacy_identity_requires_matching_record_content(self):
         run={'source_hash':'source','reviewed_hash':'review','belief_run_id':'old-run','confirmed_beliefs':{'F1':{'low':.2,'high':.3,'unknown':.5}}}
         run['input_belief_hash']=content_hash({'source_hash':run['source_hash'],'reviewed_hash':run['reviewed_hash'],'belief_run_id':run['belief_run_id'],'confirmed_beliefs':run['confirmed_beliefs']})

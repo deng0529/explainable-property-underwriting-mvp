@@ -644,7 +644,7 @@ screening:
   - SC06
   approved_policy_hash: f8d1e3c9a4727309940d7808a9a08225fc721dc0cebb526c0acb328c66d2dc62
 app:
-  title: MVP Version 2 — Reliability upgrade
+  title: Explainable Property Underwriting
   case_catalogue_path: config/case_catalogue.json
   default_information_category: Company
   default_screening_check: SC01

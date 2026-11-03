@@ -1,5 +1,6 @@
 """Explicit decision-review loading, human decision history and saved-record reports."""
 import hashlib
+from contextlib import nullcontext
 import streamlit as st
 from underwriting.configuration.settings import get_config
 from underwriting.configuration.decision_model import effective_model_hash, get_model
@@ -89,7 +90,7 @@ def render_decision(case, prefix):
             st.error('Missing configuration: ' + ', '.join(settings.missing(paid=False)) if settings.missing(paid=False) else 'Database connection unavailable.')
             return
         try:
-            with st.status('Decision review · checking saved inputs', expanded=True) as status:
+            with st.status('Decision review · checking saved inputs', expanded=True) as status, (store.read_connection() if hasattr(store,'read_connection') else nullcontext()):
                 def progress(stage, message):
                     status.update(label='Decision review · ' + stage)
                     status.write(message)
@@ -97,11 +98,15 @@ def render_decision(case, prefix):
                         view['report_error']=message
                     elif stage=='Report':
                         view.pop('report_error',None)
+                loaded_context={}
                 run, origin = load_generate(settings, case, store, regenerate=regenerate, confirmed=regenerate,
-                    expected_run=view['attempt']['review_run_id'] if view['attempt'] else None, progress=progress)
+                    expected_run=view['attempt']['review_run_id'] if view['attempt'] else None, progress=progress,
+                    on_snapshot=lambda snapshot: loaded_context.update(snapshot=snapshot))
                 view.pop('blocked', None)
                 view['attempt_origin'] = origin
-                current_snapshot = assemble_snapshot(case,store)
+                current_snapshot = loaded_context.get('snapshot')
+                if current_snapshot is None:
+                    current_snapshot = assemble_snapshot(case,store)
                 current_hash = snapshot_hash(current_snapshot)
                 view['current_screening'] = current_snapshot['submission']['screening_resolution']
                 view['current_snapshot'] = current_snapshot

@@ -10,17 +10,8 @@ def remember(view, stage, run=None, error=None, source=None):
 
 
 def render(view, stage):
-    run=view.get('run') or view.get('saved') or view.get('latest_attempt') or view.get('attempt')
-    value=view.get('last_diagnostics')
-    if value is None and run:
-        origin=view.get('origin') or ''
-        source='saved_database_result' if 'database' in origin or 'SQLite' in origin else None
-        value=diagnostic(stage,run,source=source,status='stale' if view.get('stale') else None)
-    if value is None and view.get('error'):
-        value=diagnostic(stage,error=ValueError('Stage error'))
-    if value is not None:
-        with st.expander('Run diagnostics · '+stage):
-            st.json(value)
+    """Technical metadata stays available internally, outside the review interface."""
+    return None
 
 
 def source_label(value, settings):

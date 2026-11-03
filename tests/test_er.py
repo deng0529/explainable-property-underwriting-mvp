@@ -232,7 +232,7 @@ er_results(view)
                 if ": " in item.value:
                     self.assertRegex(item.value.split(": ")[-1], r"^\d\.\d{2}$")
             self.assertFalse(any("provenance" in item.label.lower() for item in app.expander))
-            self.assertEqual(len(app.json), 3)
+            self.assertEqual(len(app.json), 2)
             self.assertTrue(any("nonlinearly" in item.value for item in app.caption))
             self.assertTrue(any("Most supported: Mixed assessment" in item.value for item in app.markdown))
             changed = copy.deepcopy(get_model())

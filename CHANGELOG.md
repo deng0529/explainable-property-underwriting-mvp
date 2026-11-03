@@ -1,3 +1,5 @@
+Restored product title with small V2 label and scope note, removed technical diagnostic expanders, and reduced repeated read-only Decision loading work.
+
 Fixed V2 Cloud startup: read-only Turso uses Cloud secrets without requiring a local Windows .env file; local explicit-file loading remains supported.
 
 Added explicitly configured existing-Turso saved-results-only mode with transport-level SELECT enforcement and read-only V1 identity compatibility.

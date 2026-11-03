@@ -1,3 +1,10 @@
+The interface is titled **Explainable Property Underwriting**, with a small
+Version 2 label and an About this MVP scope note (Fire and Security only).
+Technical run diagnostics are retained internally and no longer appear as UI
+expanders. Read-only Decision loading reuses one HTTP session, shares the
+validated current snapshot with the view, and fetches PDFs on demand; no query
+results are cached between checks and no GPT requests or writes are enabled.
+
 For Streamlit Cloud, deploy `cloud_app.py` from `feature/v2-reliability`.
 In the app's Secrets settings, supply TOML with quoted values:
 

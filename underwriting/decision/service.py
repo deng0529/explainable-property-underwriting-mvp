@@ -16,6 +16,8 @@ from underwriting.decision.content import review_content_hash, same_review_conte
 from underwriting.decision.snapshot import assemble_snapshot, snapshot_hash, check_submission_ready, DecisionPrerequisiteError
 from underwriting.decision.schema import validate_review, review_output_schema, validate_screening_narrative, ACTIONS
 
+from underwriting.persistence.intake import reuse_read_connection
+
 ROOT = PROJECT_ROOT
 _guard = threading.Lock()
 _locks = {}
@@ -117,7 +119,8 @@ def latest_content_attempt(case,store,snapshot):
     return None
 
 
-def load_generate(settings, case, store, *, regenerate=False, confirmed=False, expected_run=None, request=None, progress=None):
+@reuse_read_connection
+def load_generate(settings, case, store, *, regenerate=False, confirmed=False, expected_run=None, request=None, progress=None, on_snapshot=None):
     report = progress or (lambda stage, message: None)
     report('Prerequisites', 'Checking saved Submission screening before any GPT request or write.')
     check_submission_ready(case, store)
@@ -126,6 +129,8 @@ def load_generate(settings, case, store, *, regenerate=False, confirmed=False, e
         snapshot = assemble_snapshot(case, store)
     except ValueError as error:
         raise DecisionPrerequisiteError('Decision review is not ready: ' + str(error) + ' Complete the required saved Assessment stage first. No GPT request was made.') from None
+    if on_snapshot is not None:
+        on_snapshot(snapshot)
     report('Prerequisites', 'Saved Submission and Assessment records found in Turso. Earlier tabs do not need to be opened in this session.')
     if snapshot['submission']['outcome'] == 'Pause for clarification':
         report('Screening', 'Saved screening is paused. This review can identify concerns and request clarification or senior review; continuation is not permitted.')
@@ -148,8 +153,11 @@ def load_generate(settings, case, store, *, regenerate=False, confirmed=False, e
             if not same_review_content(saved['input_snapshot'],snapshot):
                 raise ValueError('Saved decision review does not match current substantive content.')
             report('Database','Matching saved Decision review found. Loading its saved results; no GPT request will be made.')
-            from underwriting.decision.reports import attempt_report
-            attempt_report(settings,case,store,saved,report)
+            if settings.service_mode!='turso_readonly':
+                from underwriting.decision.reports import attempt_report
+                attempt_report(settings,case,store,saved,report)
+            # Read-only viewers fetch the saved PDF on download, not before the
+            # review appears. This avoids another complete upstream scan here.
             return saved, 'Turso database · no GPT call'
         require_owner(settings)
         if regenerate and not confirmed:
@@ -281,6 +289,7 @@ def export_historical_report(settings, case, store, review_id):
     return ensure_report(settings,case,store,run,historical=True)['pdf']
 
 
+@reuse_read_connection
 def export_current_report(settings, case, store):
     """Retrieve a matching durable report, rebuilding only on an explicit cache miss."""
     if settings.missing(paid=False):

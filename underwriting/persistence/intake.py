@@ -1,6 +1,8 @@
 """Append-only intake runs over Turso HTTP. Writes require owner proof."""
 import json
 import re
+from contextlib import contextmanager, nullcontext
+from functools import wraps
 from urllib.parse import urlsplit
 
 import requests
@@ -19,6 +21,16 @@ class StoreError(RuntimeError):
     pass
 
 
+def reuse_read_connection(function):
+    """Reuse transport within one action, never cache query results across checks."""
+    @wraps(function)
+    def wrapped(settings,case,store,*args,**kwargs):
+        context=store.read_connection() if hasattr(store,'read_connection') else nullcontext()
+        with context:
+            return function(settings,case,store,*args,**kwargs)
+    return wrapped
+
+
 class TursoStore:
     def __init__(self, settings):
         self.settings = settings
@@ -33,6 +45,20 @@ class TursoStore:
             raise StoreError("TURSO_DATABASE_URL must be a credential-free HTTPS/libSQL database URL.")
         self.endpoint = address.rstrip("/") + "/v2/pipeline"
 
+    @contextmanager
+    def read_connection(self):
+        # One TLS connection for repeated saved-input checks. Queries still reach
+        # Turso each time, so concurrent-change checks remain effective.
+        if self.settings.service_mode!='turso_readonly' or getattr(self,'_read_session',None) is not None:
+            yield self
+            return
+        with requests.Session() as session:
+            self._read_session=session
+            try:
+                yield self
+            finally:
+                self._read_session=None
+
     def execute(self, sql, args=(), missing_ok=False):
         if self.settings.service_mode=='turso_readonly':
             if not re.match(r'^\s*SELECT\s',sql,re.IGNORECASE) or ';' in sql:
@@ -44,7 +70,8 @@ class TursoStore:
         require_test_services(self.settings)
         encoded = [{"type": "text", "value": str(value)} for value in args]
         try:
-            response = requests.post(self.endpoint,
+            post = self._read_session.post if getattr(self,"_read_session",None) is not None else requests.post
+            response = post(self.endpoint,
                 headers={"Authorization": "Bearer " + self.settings.database_token},
                 json={"requests": [{"type": "execute", "stmt": {"sql": sql, "args": encoded}}, {"type": "close"}]},
                 timeout=(10, 30))

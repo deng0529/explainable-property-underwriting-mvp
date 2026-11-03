@@ -5,7 +5,7 @@ import streamlit as st
 def main():
     from underwriting.configuration.settings import get_config, ConfigError
 
-    st.set_page_config(page_title="Explainable property underwriting", layout="wide")
+    st.set_page_config(page_title="Explainable Property Underwriting", layout="wide")
     try:
         configuration = get_config()
     except ConfigError as error:
@@ -23,6 +23,10 @@ def main():
 
     apply_styles()
     st.title(configuration["app"]["title"])
+    st.caption('Version 2 · Research MVP')
+    with st.expander('About this MVP'):
+        st.write('Evidence-grounded property underwriting review with human oversight. This demonstration assesses Fire and Security concerns only; other perils and underwriting factors are outside the current model. It does not accept or decline insurance.')
+        st.write('The attribute hierarchy, weights and rules are configurable, providing a foundation for extending the prototype after implementation and validation.')
     if configuration['services']['mode']=='offline':
         st.caption('Offline development · Version 2 local SQLite only · no external database connection or GPT generation. Saved local fixtures remain reviewable.')
     if configuration['services']['mode']=='turso_readonly':
