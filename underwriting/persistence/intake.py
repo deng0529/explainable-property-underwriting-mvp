@@ -1,5 +1,6 @@
 """Append-only intake runs over Turso HTTP. Writes require owner proof."""
 import json
+import re
 from urllib.parse import urlsplit
 
 import requests
@@ -33,6 +34,9 @@ class TursoStore:
         self.endpoint = address.rstrip("/") + "/v2/pipeline"
 
     def execute(self, sql, args=(), missing_ok=False):
+        if self.settings.service_mode=='turso_readonly':
+            if not re.match(r'^\s*SELECT\s',sql,re.IGNORECASE) or ';' in sql:
+                raise PermissionError('Read-only Turso access permits one SELECT query only. No database write was made.')
         if self.settings.service_mode == 'offline':
             from underwriting.persistence.local import execute
             return execute(self.settings,sql,args,missing_ok)

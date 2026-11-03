@@ -1,3 +1,12 @@
+Current local configuration uses `services.mode: turso_readonly`: it reads the
+existing Turso database through the explicitly configured `credential_env_path`.
+Only database credential names are used from that file; GPT credentials are not
+loaded. No credentials are copied, and neither the credential file nor V1 is
+modified. Saved results load on button clicks. Missing/stale results are reported,
+never regenerated; writes, schema changes and paid calls are blocked server-side.
+Switch to `offline` to return to isolated local development. Legacy V1 content
+identities remain readable without migrating or rewriting stored records.
+
 # Explainable Property Underwriting MVP
 
 **MVP Version 2 — Reliability upgrade** — a local research prototype with Submission, Assessment,

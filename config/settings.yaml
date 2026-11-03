@@ -665,7 +665,8 @@ decision:
 
 # V2 isolation: this checkout never consumes V1 credential names.
 services:
-  mode: offline
+  mode: turso_readonly
+  credential_env_path: C:/Weihua/project/explainable-property-underwriting-mvp/.env
   local_database_path: .runtime/v2.sqlite
   test_scope_confirmed: false
   allowed_test_database_hosts: []

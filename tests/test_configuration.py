@@ -24,6 +24,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_model_is_only_from_yaml_and_missing_message_is_clear(self):
         config = copy.deepcopy(get_config())
+        config["services"]["mode"] = "offline"
         config["llm"]["model"] = None
         with patch("underwriting.configuration.access.get_config", return_value=config), \
              patch("underwriting.configuration.access.load_dotenv"), \

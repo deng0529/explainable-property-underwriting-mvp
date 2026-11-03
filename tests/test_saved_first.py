@@ -37,7 +37,9 @@ class SavedFirstTests(unittest.TestCase):
             root = Path(directory)
             (root / ".env").write_text("V2_OPENAI_API_KEY=test-only-file-key\nV2_TURSO_DATABASE_URL=https://test.invalid\nV2_TURSO_AUTH_TOKEN=test-only-token\n", encoding="utf-8")
             (root / "Corda.env").write_text("OPENAI_API_KEY=must-not-load\n", encoding="utf-8")
-            with patch("underwriting.configuration.access.ROOT", root), patch.dict(os.environ, {"V2_OPENAI_API_KEY": "test-only-existing"}, clear=True):
+            config=copy.deepcopy(__import__("underwriting.configuration.settings",fromlist=["get_config"]).get_config())
+            config["services"]["mode"]="offline"
+            with patch("underwriting.configuration.access.get_config",return_value=config), patch("underwriting.configuration.access.ROOT", root), patch.dict(os.environ, {"V2_OPENAI_API_KEY": "test-only-existing"}, clear=True):
                 settings = load_settings()
                 self.assertEqual(settings.api_key, "test-only-existing")
                 self.assertEqual(settings.database_token, "test-only-token")

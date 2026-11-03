@@ -21,10 +21,11 @@ class ERStore(BeliefStore):
         return json.loads(rows[0][0]["value"]) if rows else None
 
     def latest_er_compatible(self, case, digest, inputs, er_model_hash, engine_version):
-        rows = self.execute("SELECT payload FROM er_aggregation_runs_v1 WHERE case_id=? AND source_version=? AND source_hash=? AND input_hash=? AND engine_version=? ORDER BY finished_at DESC,rowid DESC",
-                            [case["case_id"], case["submission_version"], digest, inputs, engine_version], missing_ok=True)["rows"]
+        rows = self.execute("SELECT payload FROM er_aggregation_runs_v1 WHERE case_id=? AND source_version=? AND source_hash=? AND engine_version=? ORDER BY finished_at DESC,rowid DESC",
+                            [case["case_id"], case["submission_version"], digest, engine_version], missing_ok=True)["rows"]
         for row in rows:
             run = json.loads(row[0]["value"])
-            if effective_er_model_hash(run["decision_model_snapshot"]) == er_model_hash:
+            from underwriting.assessment.er_service import compatible_input_hashes
+            if inputs in compatible_input_hashes(run) and effective_er_model_hash(run["decision_model_snapshot"]) == er_model_hash:
                 return run
         return None

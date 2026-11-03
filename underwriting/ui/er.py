@@ -7,7 +7,7 @@ from underwriting.persistence.intake import StoreError
 from underwriting.configuration.decision_model import get_model, effective_er_model_hash
 from underwriting.assessment.evidence_service import document_hash
 from underwriting.models.er import ERInputError, ERUndefinedError
-from underwriting.assessment.er_service import calculate_er, input_belief_hash, required_members
+from underwriting.assessment.er_service import calculate_er, input_belief_hash, required_members, compatible_input_hashes
 from underwriting.persistence.er import ERStore
 from underwriting.ui.er_presentation import group_presentation, describe_er_result
 from underwriting.ui.readiness import belief_blocker
@@ -36,7 +36,7 @@ def er_controls(case, prefix, belief_view, button_slot):
             else:
                 values = {identifier: events[identifier]["values"] for identifier in sorted(needed)}
                 current_hash = input_belief_hash(digest, proposal["reviewed_hash"], proposal["run_id"], values)
-                view["stale"] |= current_hash != run["input_belief_hash"]
+                view["stale"] |= current_hash not in compatible_input_hashes(run)
     owner = authorised(settings)
     if stage_button(button_slot, "Calculate Fire/Security ER" if owner else "Load saved Fire/Security results", prefix, "ER results", permitted=not prerequisite and not settings.missing(paid=False) and digest != "source-unavailable", disabled=not model["er"]["enabled"],
                           key=f"{prefix}:Calculate assessment", width="stretch", help=prerequisite or "Calculate configured ER groups from current confirmed beliefs; no GPT request."):

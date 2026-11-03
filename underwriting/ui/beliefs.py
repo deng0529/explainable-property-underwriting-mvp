@@ -31,7 +31,8 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
     if view["run"] and evidence_view.get("run"):
         try:
             _, review_hash, _ = reviewed_set(evidence_view["run"], evidence_view["reviews"])
-            view["stale"] = review_hash != view["run"]["reviewed_hash"]
+            from underwriting.assessment.belief_service import reviewed_hash_matches
+            view["stale"] = not reviewed_hash_matches(evidence_view["run"],evidence_view["reviews"],view["run"]["reviewed_hash"])
         except ValueError:
             view["stale"] = True
     store = None

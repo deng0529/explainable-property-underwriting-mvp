@@ -21,6 +21,14 @@ def input_belief_hash(digest, reviewed_hash, belief_run_id, values):
                          "identity_version": get_config()["reliability"]["identity_version"]+":confirmed-beliefs", "confirmed_beliefs": values})
 
 
+def compatible_input_hashes(run):
+    """Recognise recorded V1 identity only after checking its actual input content."""
+    legacy=content_hash({'source_hash':run['source_hash'],'reviewed_hash':run['reviewed_hash'],
+                         'belief_run_id':run['belief_run_id'],'confirmed_beliefs':run['confirmed_beliefs']})
+    modern=input_belief_hash(run['source_hash'],run['reviewed_hash'],run['belief_run_id'],run['confirmed_beliefs'])
+    return {legacy,modern} if run['input_belief_hash'] in {legacy,modern} else set()
+
+
 def current_confirmed(case, store, model):
     digest, evidence, _, reviewed_hash, _ = current_input(case, store)
     proposal = store.latest_beliefs(case, digest, reviewed_hash)

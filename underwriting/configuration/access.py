@@ -2,7 +2,7 @@
 import os
 from dataclasses import dataclass, field
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 from underwriting.configuration.settings import get_config
 
 from underwriting.paths import PROJECT_ROOT
@@ -44,6 +44,14 @@ def load_settings(secrets=None):
                      if os.environ.get(alias) or (secrets or {}).get(alias)), "")
     configuration = get_config()
     llm = configuration["llm"]
+    if configuration['services']['mode']=='turso_readonly':
+        # Explicit user-selected source, never an offline/test-mode fallback.
+        values=dotenv_values(configuration['services']['credential_env_path'])
+        def credential(*names):
+            return next((values[name] for name in names if values.get(name)), '')
+        return Settings('',llm['model'] or '',credential('V2_TURSO_DATABASE_URL','TURSO_DATABASE_URL'),
+                        credential('V2_TURSO_AUTH_TOKEN','TURSO_AUTH_TOKEN'),'public_readonly',
+                        llm['timeout_seconds'],dict(llm['generation']),'turso_readonly')
     return Settings(get("OPENAI_API_KEY"), llm["model"] or "", get("TURSO_DATABASE_URL"),
                     get("TURSO_AUTH_TOKEN"), configuration["access"]["mode"],
                     llm["timeout_seconds"], dict(llm["generation"]),
@@ -57,6 +65,8 @@ def local_server():
 
 
 def require_owner(settings, proof=None):
+    if settings.service_mode=='turso_readonly':
+        raise PermissionError('Saved-results-only Turso connection: GPT requests, calculations and all database writes are disabled.')
     # Mode comes from server settings, never a client widget or session boolean.
     if settings.access_mode != "local_owner" or get_config()["access"]["mode"] != "local_owner" or not local_server():
         raise PermissionError("Writes and paid calls require local_owner mode on a loopback-bound server. public_readonly permits saved-result viewing only.")
@@ -64,6 +74,10 @@ def require_owner(settings, proof=None):
 
 def require_test_services(settings, *, generation=False):
     """Explicit test-only egress; legacy/global V1 credentials are never loaded."""
+    if settings.service_mode == 'turso_readonly':
+        if generation:
+            raise PermissionError('Saved-results-only Turso connection: GPT generation is disabled. Load existing saved results instead.')
+        return
     if settings.service_mode == 'offline':
         raise PermissionError('Offline mode: no external database or GPT request is allowed. Use local recorded fixtures, or explicitly configure separate V2 test services.')
     if settings.service_mode != 'test_turso' or not settings.test_scope_confirmed:

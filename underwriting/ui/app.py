@@ -25,6 +25,8 @@ def main():
     st.title(configuration["app"]["title"])
     if configuration['services']['mode']=='offline':
         st.caption('Offline development · Version 2 local SQLite only · no external database connection or GPT generation. Saved local fixtures remain reviewable.')
+    if configuration['services']['mode']=='turso_readonly':
+        st.caption('Saved results · existing Turso database · read-only access · no GPT calls or database changes.')
     try:
         cases = load_cases()
     except (OSError, ValueError, KeyError, TypeError) as error:

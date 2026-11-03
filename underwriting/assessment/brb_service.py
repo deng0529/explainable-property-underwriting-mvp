@@ -7,7 +7,7 @@ from underwriting.models.brb import infer_brb, ENGINE_VERSION
 from underwriting.models.brb_adapter import prepare_brb_inputs
 from underwriting.configuration.decision_model import get_model, validate_model, effective_model_hash, effective_er_model_hash
 from underwriting.models.er import ENGINE_VERSION as ER_ENGINE_VERSION
-from underwriting.assessment.er_service import current_confirmed, input_belief_hash
+from underwriting.assessment.er_service import current_confirmed, input_belief_hash, compatible_input_hashes
 from underwriting.configuration.access import require_owner
 from underwriting.intake.service import now
 
@@ -30,7 +30,7 @@ def current_er_inputs(case, er_run, store, model):
         raise ValueError("ER results belong to another company, source or submission version.")
     if er_run["engine_version"] != ER_ENGINE_VERSION or effective_er_model_hash(er_run["decision_model_snapshot"]) != effective_er_model_hash(model):
         raise ValueError("ER configuration or engine changed. Calculate Fire / Security ER again.")
-    if input_belief_hash(digest, reviewed, proposal, values) != er_run["input_belief_hash"]:
+    if input_belief_hash(digest, reviewed, proposal, values) not in compatible_input_hashes(er_run):
         raise ValueError("Confirmed attribute beliefs changed. Calculate Fire / Security ER again.")
     latest = store.latest_er_compatible(case, digest, er_run["input_belief_hash"], effective_er_model_hash(model), ER_ENGINE_VERSION)
     if not latest or latest["run_id"] != er_run["run_id"]:

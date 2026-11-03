@@ -40,3 +40,7 @@ instructions determine scope.
   only in ignored, worktree-local pending storage and configured test database.
 - evals is synthetic software evaluation, separate from expert approval. Preserve
   unchanged numerical modules/model and upstream MIT notices. Use offline tests.
+
+User-authorized exception: turso_readonly may read the existing database using
+an explicit credential_env_path. Never copy secrets, run non-SELECT statements,
+write schema/results, or call GPT in this mode. Retain V1 identity compatibility.

@@ -26,7 +26,9 @@ import test_intake as intake_fixtures
 
 class IsolationTests(unittest.TestCase):
     def test_default_offline_never_uses_v1_credential_names(self):
-        with patch('underwriting.configuration.access.load_dotenv'), patch.dict(os.environ,{
+        from underwriting.configuration.settings import get_config
+        config=copy.deepcopy(get_config());config['services']['mode']='offline'
+        with patch('underwriting.configuration.access.get_config',return_value=config), patch('underwriting.configuration.access.load_dotenv'), patch.dict(os.environ,{
             'OPENAI_API_KEY':'v1-do-not-use','TURSO_DATABASE_URL':'https://production.invalid','TURSO_AUTH_TOKEN':'v1-do-not-use',
             'V2_OPENAI_API_KEY':'','V2_TURSO_DATABASE_URL':'','V2_TURSO_AUTH_TOKEN':''}):
             settings=load_settings({})

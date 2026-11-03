@@ -52,12 +52,22 @@ def reviewed_set(evidence, events):
     return result, content_hash(identity), versions
 
 
+def reviewed_hash_matches(evidence,events,expected):
+    reviewed,modern,_=reviewed_set(evidence,events)
+    return expected in {modern,content_hash(reviewed)}
+
+
 def current_input(case, store):
     digest = document_hash(case)
     evidence = store.latest_evidence(case, digest)
     if not evidence:
         raise ValueError("No saved attribute evidence exists for this company and current source.")
     reviewed, digest_reviewed, versions = reviewed_set(evidence, store.reviews(evidence["run_id"]))
+    # V1 identities included the audit evidence-run ID. Read existing records
+    # without rewriting them, while new V2 results keep material identities.
+    legacy=content_hash(reviewed)
+    if not store.latest_beliefs(case,digest,digest_reviewed) and store.latest_beliefs(case,digest,legacy):
+        digest_reviewed=legacy
     return digest, evidence, reviewed, digest_reviewed, versions
 
 

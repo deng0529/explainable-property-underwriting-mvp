@@ -1,3 +1,5 @@
+Added explicitly configured existing-Turso saved-results-only mode with transport-level SELECT enforcement and read-only V1 identity compatibility.
+
 ## MVP Version 2 — Reliability upgrade
 
 - Isolated worktree, environment, offline SQLite storage and port 8502.
