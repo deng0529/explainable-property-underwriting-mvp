@@ -56,6 +56,39 @@ class ComparisonTests(unittest.TestCase):
     def run_pair(self,settings=None):
         return service.compare_beliefs(settings or self.settings,self.case,self.store,request_a=self.a,request_b=self.b)
 
+    def test_interpolated_score_does_not_require_evidence_for_both_directions(self):
+        for direction in ('low','high'):
+            data=copy.deepcopy(self.b_data)
+            data['assessments'][0][direction+'_support']['evidence_ids']=[]
+            data['assessments'][0][direction+'_support']['explanation']='No separate directional finding; fractional membership is interpolated.'
+            validated=validate_scores(data,self.reviewed,pages=self.snapshot['source']['pages'])
+            self.assertEqual(validated['assessments'][0]['beliefs'],{'low':.525,'high':.175,'unknown':.3})
+        data['assessments'][0]['low_support']['evidence_ids']=[]
+        data['assessments'][0]['high_support']['evidence_ids']=[]
+        with self.assertRaisesRegex(ValueError,'requires reviewed evidence'):
+            validate_scores(data,self.reviewed,pages=self.snapshot['source']['pages'])
+        direct=copy.deepcopy(self.a_data);direct['assessments'][0]['high_support']['evidence_ids']=[]
+        with self.assertRaisesRegex(ValueError,'Assigned high'):
+            validate_direct(direct,self.reviewed,pages=self.snapshot['source']['pages'])
+
+    def test_failed_score_can_be_revalidated_without_provider_or_overwriting_history(self):
+        self.b_data['assessments'][0]['high_support']['evidence_ids']=[]
+        original=service.validate_result
+        def old_validator(data,snapshot,method,settings):
+            if method=='score':raise ValueError('Assigned high support requires reviewed evidence IDs.')
+            return original(data,snapshot,method,settings)
+        with patch.object(service,'validate_result',side_effect=old_validator):
+            pair=self.run_pair()
+        failed=pair['score'];self.assertEqual(failed['status'],'failed')
+        with patch.object(service,'structured_request',side_effect=AssertionError('No GPT call')):
+            recovered=service.revalidate_score_response(self.settings,self.case,self.store,failed)
+        self.assertEqual(recovered['status'],'completed')
+        self.assertNotEqual(recovered['run_id'],failed['run_id'])
+        self.assertEqual(recovered['recovered_from_run_id'],failed['run_id'])
+        self.assertEqual(failed['status'],'failed');self.a.assert_called_once();self.b.assert_called_once()
+        loaded=self.run_pair();self.assertEqual(loaded['score']['run_id'],recovered['run_id'])
+        self.a.assert_called_once();self.b.assert_called_once()
+
     def test_independent_prompts_identical_full_input_and_no_output_leakage(self):
         result=self.run_pair();a,b=result['direct'],result['score']
         self.assertEqual(a['input_snapshot'],b['input_snapshot']);self.assertEqual(a['input_hash'],b['input_hash'])
@@ -250,6 +283,8 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertIn('**Score + Unknown**',[m.value for m in app.markdown])
         self.assertIn('52.5%',[m.value for m in app.metric]);self.assertIn('17.5%',[m.value for m in app.metric])
+        for heading in ('**Low support**','**High support**','**Unknown support**'):
+            self.assertIn(heading,[m.value for m in app.markdown])
         self.assertTrue(next(b for b in app.button if b.label=='Confirm beliefs').disabled)
         app.run();self.a.assert_called_once();self.b.assert_called_once()
 

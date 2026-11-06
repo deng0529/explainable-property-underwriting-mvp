@@ -234,3 +234,20 @@ def compare_beliefs(settings,case,store,request_a=None,request_b=None,progress=N
         try:result[method]=propose_method(settings,case,store,snapshot,method,request=request,progress=progress)
         except (PermissionError,ValueError,StoreError) as error:result[method+'_error']=str(error)
     return result
+
+
+def revalidate_score_response(settings,case,store,run):
+    """Explicit save-only recovery; append a new record without calling GPT."""
+    require_owner(settings)
+    if run.get('comparison_method')!='score' or run.get('status')!='failed' or not run.get('response_text'):
+        raise ValueError('A retained failed score response is required.')
+    snapshot=run['input_snapshot'];validate_snapshot(snapshot)
+    if not current_matches(case,store,snapshot):raise ValueError('Saved score input is stale; load current reviewed evidence first.')
+    if run['cache_key']!=method_identity(settings,snapshot,'score'):raise ValueError('Score method settings changed; historical response preserved.')
+    result=validate_result(json.loads(run['response_text']),snapshot,'score',run['method_settings'])
+    recovered=copy.deepcopy(run)
+    recovered.update(run_id=uuid.uuid4().hex,recovered_from_run_id=run['run_id'],
+        validation_version='score-interpolation-support-v2.1',result=result,status='validated',
+        finished_at=now(),validation_errors=[],result_source='retained_response')
+    retain(recovered)
+    return retry_comparison_save(settings,store,recovered)

@@ -78,14 +78,16 @@ def validate_attribute_set(items,reviewed,definitions):
         raise ValueError('Comparison must contain every enabled attribute exactly once.')
     return evidence
 
-def validate_support(item,source,pages,beliefs):
+def validate_support(item,source,pages,beliefs,*,interpolated_score=False):
     allowed={e['evidence_id'] for e in source['evidence_items']}
     def refs_valid(refs):
         if len(refs)!=len(set(refs)) or not set(refs)<=allowed:
             raise ValueError('Unsupported, duplicate or cross-attribute evidence IDs.')
     for name in ('low','high'):
         refs=item[name+'_support']['evidence_ids'];refs_valid(refs)
-        if beliefs[name]>0 and not refs:raise ValueError('Assigned '+name+' support requires reviewed evidence IDs.')
+        if not interpolated_score and beliefs[name]>0 and not refs:raise ValueError('Assigned '+name+' support requires reviewed evidence IDs.')
+    if interpolated_score and item['assessable'] and not any(item[name+'_support']['evidence_ids'] for name in ('low','high')):
+        raise ValueError('An assessable concern score requires reviewed evidence IDs in Low or High support.')
     unresolved=item['unresolved_information'];flags=item['evidence_review_flags']
     if beliefs['unknown']==0 and (any(i['materiality']=='material' for i in unresolved) or any(i['materiality']=='material' for i in flags)):
         raise ValueError('Unknown=0 conflicts with material unresolved information/review flags.')
@@ -114,7 +116,7 @@ def validate_scores(data,reviewed,definitions=None,settings=None,pages=None):
     result=ScoreOutput.model_validate(data).model_dump();evidence=validate_attribute_set(result['assessments'],reviewed,definitions)
     for item in result['assessments']:
         item['beliefs']=score_to_beliefs(item['assessable'],item['concern_score'],item['unknown'],settings)
-        validate_support(item,evidence[item['attribute_id']],pages,item['beliefs'])
+        validate_support(item,evidence[item['attribute_id']],pages,item['beliefs'],interpolated_score=True)
     return result
 
 def response_only(result):

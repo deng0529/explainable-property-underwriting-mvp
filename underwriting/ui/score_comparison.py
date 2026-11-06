@@ -27,10 +27,15 @@ def details(item):
         for name in ('low','high'):
             support=item[name+'_support'];st.markdown('**'+name.title()+' support**')
             st.text(support['explanation']);st.caption('Evidence IDs: '+(', '.join(support['evidence_ids']) or '—'))
+        st.markdown('**Unknown support**')
+        if 'unknown_explanation' in item:st.text(item['unknown_explanation'])
+        elif item['unresolved_information']:st.caption('Unassigned belief reflects the unresolved information below; these are gaps, not evidence of an absent protection.')
+        elif not item['evidence_review_flags']:st.caption('No unresolved support was returned for Unknown.')
         for issue in item['unresolved_information']:
             st.text(issue['issue']+' · '+issue['materiality']+' · '+issue['potential_assessment_impact'])
         for flag in item['evidence_review_flags']:
             st.text('Evidence review needed: '+flag['issue'])
+            st.caption('Evidence IDs: '+(', '.join(flag['evidence_ids']) or '— (unreviewed source finding)'))
             if flag['page'] is not None:st.caption(f"Page {flag['page']} · {flag['section'] or 'Section not specified'}");st.text(flag['exact_quote'])
         if not item['unresolved_information'] and not item['evidence_review_flags']:st.caption('No unresolved items or evidence-review flags returned.')
 
@@ -38,7 +43,7 @@ def status(view,run,method):
     stale=method_stale(view,run,method)
     if stale:st.caption('Stale result · input or method version differs')
     elif run:
-        source={'generated':'Generated and saved','database':'Loaded from database','retained_response':'Retained response · no new GPT call'}.get(run.get('result_source'),'Saved result')
+        source={'generated':('Generated and saved' if run['status']=='completed' else 'Generated response · saved attempt'),'database':'Loaded from database','retained_response':'Retained response · no new GPT call'}.get(run.get('result_source'),'Saved result')
         st.caption(('Save pending · ' if run.get('save_pending') else '')+run['status'].title()+' · '+source+' · '+str(run['finished_at'] or 'Interrupted'))
     else:st.caption('Missing result · click Load proposed beliefs')
     error=view.get('direct_comparison_error' if method=='direct' else 'score_error')

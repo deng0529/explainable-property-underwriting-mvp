@@ -1,3 +1,13 @@
+Comparison support correction (6 November): Low, High and Unknown support are
+labelled separately. Score interpolation may produce nonzero Low and High without
+separate findings in both directions; an assessable score still requires valid
+reviewed evidence in at least one support list. Unknown remains justified by
+unresolved information/review flags. For a previously failed score, load it and
+open **Comparison retry / save recovery**, then select **Recheck saved score
+response · no GPT call**. This validates the retained response and appends a
+recovered record, preserving the failed attempt. Other validation errors remain
+blocked; no request is silently repeated.
+
 Temporary belief comparison — updated 6 November 2026:
 
 - New display-only Prompt A: `prompts.attribute_direct_comparison.template`

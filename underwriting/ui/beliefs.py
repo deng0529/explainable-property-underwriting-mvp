@@ -4,7 +4,7 @@ from decimal import Decimal
 import streamlit as st
 from underwriting.ui.diagnostics import source_label
 from underwriting.configuration.access import comparison_available, local_comparison_settings
-from underwriting.assessment.score_service import compare_beliefs, propose_method, pending_comparisons, retry_comparison_save, method_identity, latest
+from underwriting.assessment.score_service import compare_beliefs, propose_method, pending_comparisons, retry_comparison_save, method_identity, latest, revalidate_score_response
 from underwriting.assessment.comparison_context import freeze_context
 from underwriting.ui.score_comparison import render_comparison
 from underwriting.assessment.belief_service import reviewed_snapshot_hash
@@ -187,6 +187,14 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                             gs=local_comparison_settings(settings);ss=BeliefStore(gs) if gs is not settings else store
                             saved=retry_comparison_save(gs,ss,retained)
                             view.update({field:dict(saved,result_source='retained_response'),error_field:None});st.rerun()
+                        except (ValueError,PermissionError,OSError,StoreError) as error:st.error(str(error))
+                failed=view.get(field)
+                if method=='score' and failed and failed.get('status')=='failed' and failed.get('response_text'):
+                    if st.button('Recheck saved score response · no GPT call',key=prefix+':score_revalidate',disabled=bool(prerequisite)):
+                        try:
+                            gs=local_comparison_settings(settings);ss=BeliefStore(gs) if gs is not settings else store
+                            saved=revalidate_score_response(gs,case,ss,failed)
+                            view.update({field:saved,error_field:None});st.rerun()
                         except (ValueError,PermissionError,OSError,StoreError) as error:st.error(str(error))
                 confirmed_retry=st.checkbox('Confirm one paid '+label+' request',key=prefix+':comparison_confirm:'+method)
                 if st.button('Retry / regenerate '+label+' only',disabled=not confirmed_retry or bool(prerequisite),key=prefix+':comparison_retry:'+method):
