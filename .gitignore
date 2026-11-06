@@ -26,3 +26,5 @@ Thumbs.db
 .decision_pending/
 
 .score_pending/
+
+.comparison_direct_pending/

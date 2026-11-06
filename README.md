@@ -1,35 +1,42 @@
-Temporary belief comparison (6 November 2026):
+Temporary belief comparison — updated 6 November 2026:
 
-- Prompt A remains unchanged at `prompts.attribute_beliefs.template` in
-  `config/settings.yaml`. Prompt B is separate at
-  `prompts.attribute_concern_scores.template` with its own version and schema.
-- The explicit **Load proposed beliefs** action freezes reviewed evidence once,
-  checks both stores before generation, reuses each valid result, and sends one
-  request per missing method, each covering all enabled attributes. No startup,
-  navigation or attribute selection generates results.
-- Direct runs remain in `attribute_belief_runs_v1`; score runs append to the
-  separate `attribute_concern_score_runs_v2` table with method, mapping, prompt,
-  model, source, reviewed-snapshot and review-version metadata. Old direct records
-  require no migration. Historical results and confirmations are preserved.
-- For assessable score s, Low=(5-s)/4, High=(s-1)/4, Unknown=0. For unassessable
-  evidence the score is null and Unknown=1. Score 2 gives 75%/25%; 2.6 gives
-  60%/40%. These are memberships, not probabilities. Partial ignorance is not
-  represented for assessable scores. Invalid scores are rejected, never clamped.
-- Scores are display-only. They cannot be confirmed into the existing human
-  belief records or used by ER/BRB. Generating comparison output alone does not
-  invalidate downstream results. A/B are displayed side by side per attribute.
-- The user explicitly authorized local-owner generation against existing Turso.
-  `belief_comparison.local_owner_enabled: true` permits ONLY proposal generation
-  and append-only proposal storage on the loopback local app. Other workflows
-  and human confirmation controls retain their current access settings.
-  Public `cloud_app.py` remains read-only; no API/write access is granted there.
-  The local experiment reads the existing configured credential file without
-  copying values. `OPENAI_API_KEY` is needed only when a method is missing.
-- Received score responses are retained in ignored `.score_pending/`. Use
-  **Score comparison recovery / regenerate** for save-only retry or an explicitly
-  confirmed score-only new attempt. Failed attempts preserve prior success.
-- No paid call or live database write was made during development. The score
-  table is created only by the owner's first explicit generation/save action.
+- New display-only Prompt A: `prompts.attribute_direct_comparison.template`
+  (version 2.0) in `config/settings.yaml`. Independent Prompt B:
+  `prompts.attribute_concern_scores.template` (version 2.0).
+  The original `prompts.attribute_beliefs` remains unchanged for the existing
+  canonical proposal and human-confirmation workflow.
+- **Load proposed beliefs** freezes one versioned input containing full
+  page-labelled PDF text, reviewed evidence, definitions and guidance. Saved
+  source text is reused. Both methods receive the same snapshot independently.
+  Material findings outside reviewed evidence must be flagged with source
+  locations; comparison output does not silently become confirmed evidence.
+- Each method checks its matching saved result first. One request per missing
+  method covers all enabled attributes. Navigation and startup never generate.
+  Database failure blocks generation. Prompt/input changes invalidate only the
+  relevant comparison cache; history remains readable.
+- A appends to `attribute_direct_comparison_runs_v2`; B appends to
+  `attribute_concern_score_runs_v2`. Both store method, source, input, prompt,
+  model and configuration identifiers. Previous results remain intact.
+- B proposes a concern score s and Unknown u. With configured endpoints a=1,
+  b=5: Low=(1-u)*(b-s)/(b-a), High=(1-u)*(s-a)/(b-a), Unknown=u.
+  Score 2 with u=0.30 gives 52.5% / 17.5% / 30%.
+  Unassessable evidence requires a null score and u=1. Invalid output is rejected,
+  never clamped. Scale anchors and tolerances are in `belief_comparison` YAML.
+- Both new methods are experimental display-only results. Existing canonical
+  proposals, human confirmations and ER/BRB inputs remain separate and unchanged.
+  The selected attribute shows side-by-side beliefs, explanations and B-minus-A
+  percentage-point differences, with supporting details collapsed.
+- **Comparison retry / save recovery** supports each method independently.
+  Save-only recovery never repeats GPT. A new paid attempt requires explicit
+  confirmation. Received responses stay in ignored `.comparison_direct_pending/`
+  and `.score_pending/`; historical response formats are preserved.
+- Existing local-owner comparison access permits only proposal requests and
+  append-only proposal storage on loopback. Public `cloud_app.py` remains
+  read-only. Existing configured credentials are used without copying values.
+  No additional configuration is required for the initial 1–5 scale.
+- Development uses mocked GPT and temporary storage only. No paid requests or
+  live database writes were made. Tables are initialized only on an explicit
+  authorized generation/save action. Restart Streamlit after editing YAML.
 
 The interface is titled **Explainable Property Underwriting**, with a small
 Version 2 label and an About this MVP scope note (Fire and Security only).

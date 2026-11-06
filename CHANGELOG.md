@@ -1,3 +1,5 @@
+Updated the V2-only comparison: independent improved direct-belief and score-plus-Unknown prompts, shared full-document/reviewed-evidence snapshots, method-specific saved-result reuse and recovery, and display-only comparisons. Canonical confirmations and numerical engines are unchanged.
+
 Added a temporary independent concern-score belief comparison with its own YAML prompt, append-only results, save recovery and local-only proposal access. Confirmations and ER/BRB remain based on the original direct method.
 
 Restored product title with small V2 label and scope note, removed technical diagnostic expanders, and reduced repeated read-only Decision loading work.

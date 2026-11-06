@@ -121,14 +121,37 @@ def validate(data):
     template = text(beliefs_prompt, "template", "prompts.attribute_beliefs")
     if set(re.findall(r"{{(\w+)}}", template)) != {"belief_increment", "attribute_definitions_from_yaml", "case_id_and_source_version", "reviewed_attribute_evidence_json"}:
         raise ConfigError("prompts.attribute_beliefs.template: required placeholders are missing or unknown.")
-    score_prompt = required(prompts, "attribute_concern_scores", dict, "prompts")
-    text(score_prompt, "version", "prompts.attribute_concern_scores")
-    template = text(score_prompt, "template", "prompts.attribute_concern_scores")
-    if set(re.findall(r"{{(\w+)}}", template)) != {"attribute_definitions_from_yaml", "case_id_and_source_version", "reviewed_attribute_evidence_json"}:
-        raise ConfigError("prompts.attribute_concern_scores.template: required placeholders are missing or unknown.")
+    for name,placeholders in (("attribute_direct_comparison",{"shared_input_context_json"}),
+                               ("attribute_concern_scores",{"shared_input_context_json","configured_concern_scale"})):
+        definition=required(prompts,name,dict,"prompts")
+        text(definition,"version","prompts."+name)
+        template=text(definition,"template","prompts."+name)
+        if set(re.findall(r"{{(\w+)}}",template))!=placeholders:
+            raise ConfigError("prompts."+name+".template: required placeholders are missing or unknown.")
     comparison = required(data,"belief_comparison",dict)
     required(comparison,"enabled",bool,"belief_comparison")
     required(comparison,"local_owner_enabled",bool,"belief_comparison")
+    text(comparison,"input_version","belief_comparison")
+    tolerance=required(comparison,"distribution_tolerance",(int,float),"belief_comparison")
+    if isinstance(tolerance,bool) or not math.isfinite(tolerance) or not 0<tolerance<0.01:
+        raise ConfigError("belief_comparison.distribution_tolerance: positive finite tolerance below .01 required.")
+    scale=required(comparison,"score_scale",dict,"belief_comparison")
+    for name in ("minimum","maximum"):
+        value=required(scale,name,(int,float),"belief_comparison.score_scale")
+        if isinstance(value,bool) or not math.isfinite(value):
+            raise ConfigError("belief_comparison.score_scale."+name+": finite number required.")
+    if scale['minimum']>=scale['maximum']:
+        raise ConfigError("belief_comparison.score_scale: minimum must be below maximum.")
+    anchors=required(scale,"anchors",list,"belief_comparison.score_scale")
+    values=[]
+    for anchor in anchors:
+        value=required(anchor,"score",(int,float),"belief_comparison.score_scale.anchors")
+        text(anchor,"label","belief_comparison.score_scale.anchors")
+        if isinstance(value,bool) or not math.isfinite(value) or not scale['minimum']<=value<=scale['maximum']:
+            raise ConfigError("belief_comparison.score_scale.anchors: score outside configured range.")
+        values.append(value)
+    if len(values)<2 or values!=sorted(set(values)) or values[0]!=scale['minimum'] or values[-1]!=scale['maximum']:
+        raise ConfigError("belief_comparison.score_scale.anchors: ordered unique anchors must include both endpoints.")
     decision_prompt = required(prompts, "decision_review", dict, "prompts")
     text(decision_prompt, "version", "prompts.decision_review")
     text(decision_prompt, "system", "prompts.decision_review")

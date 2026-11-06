@@ -1,5 +1,6 @@
 """Mock-only proposals and confirmations; production SQL on in-memory SQLite."""
 import copy
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -67,6 +68,9 @@ class BeliefTests(unittest.TestCase):
             patched.start()
         evidence_tests.intake_tests.seed_submission(self.store,self.case,"mock-source")
         self.store.initialise_evidence()
+        pages=[evidence_tests.TEXT]
+        self.store.save_source({'source_hash':'mock-source','extraction_version':evidence_tests.TEXT_EXTRACTION_VERSION,
+            'pages':pages,'text_hash':hashlib.sha256(json.dumps(pages,ensure_ascii=False).encode()).hexdigest()})
         self.evidence = {"run_id": "mock-evidence-run", "case_id": self.case["case_id"], "source_version": "1", "source_hash": "mock-source",
                          "status": "completed", "finished_at": "2026-01-01", "result": evidence_tests.fixture()}
         self.store.save_evidence(self.evidence)
@@ -189,6 +193,7 @@ class BeliefTests(unittest.TestCase):
             model="mock-model", text_extraction_version=TEXT_EXTRACTION_VERSION)
         # The fixture row is immutable; supply enriched metadata through the test adapter.
         evidence_tests.intake_tests.seed_submission(self.store,{"case_id":"NB-2026-001","submission_version":"1.0"},"mock-source")
+        self.run_action()  # Existing canonical proposal; comparison must not replace it.
         original_latest = self.store.latest_evidence
         self.store.latest_evidence = lambda *args, **kwargs: self.evidence
         with patch("underwriting.ui.beliefs.settings_for_ui", return_value=self.settings), \
@@ -198,9 +203,9 @@ class BeliefTests(unittest.TestCase):
              patch("underwriting.ui.evidence.document_hash", return_value="mock-source"), \
              patch("underwriting.ui.beliefs.BeliefStore", return_value=self.store), \
              patch("underwriting.assessment.belief_service.structured_request", self.request), \
-             patch("underwriting.assessment.score_service.structured_request", side_effect=AssertionError("No external score request in legacy UI test")):
+             patch("underwriting.assessment.score_service.structured_request", side_effect=lambda settings,system,prompt,schema,name: ({"status":"completed"},json.dumps(__import__("comparison_fixtures").response(current_input(self.case,self.store)[2],"direct" if name=="attribute_direct_comparison" else "score")))):
             app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
-            self.request.assert_not_called()
+            self.request.assert_called_once()
             self.assertFalse(app.exception)
             self.assertEqual([button.label for button in next(tab for tab in app.tabs if tab.label == "Assessment").button][:4], ["Load attribute evidence", "Load proposed beliefs", "Load saved Fire/Security results", "Load saved overall assessment"])
             self.assertFalse(app.button(key="case:NB-2026-001:calculate_brb").disabled)
@@ -214,7 +219,7 @@ class BeliefTests(unittest.TestCase):
             app.button(key=f"{prefix}:Propose beliefs").click().run()
             self.assertFalse(app.exception, app.exception)
             self.request.assert_called_once()
-            self.assertTrue(any("Belief source: GPT" in item.value for item in app.caption))
+            self.assertTrue(any("Belief source: Turso database" in item.value for item in app.caption))
             self.assertEqual(app.session_state[prefix + ":assessment_stage"], "Beliefs")
             self.assertEqual(len(app.segmented_control), 0)
             self.assertTrue(any(item.value == "**Direct AI beliefs**" for item in next(tab for tab in app.tabs if tab.label == "Assessment").markdown))

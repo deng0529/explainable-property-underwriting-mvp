@@ -1,48 +1,66 @@
-"""Temporary display-only comparison. Human confirmations stay in the direct view."""
+"""Experimental full-context comparison; canonical confirmation remains separate."""
 import streamlit as st
-from underwriting.assessment.score_service import score_identity
-from underwriting.assessment.belief_service import reviewed_snapshot_hash
+from underwriting.assessment.score_service import method_identity
+from underwriting.assessment.evidence_schema import attribute_definitions
 
 def distribution(values):
-    for col,key in zip(st.columns(3),('low','high','unknown')):
-        col.metric(key.title(),f"{values[key]*100:.1f}%" if values else '—')
+    for column,name in zip(st.columns(3),('low','high','unknown')):
+        column.metric(name.title(),f"{values[name]*100:.1f}%" if values else '—')
 
-def score_stale(view):
-    run=view.get('score_run')
+def method_stale(view,run,method):
     if not run:return False
-    if view.get('stale') or run.get('comparison_stale'):return True
-    if view.get('comparison_snapshot_hash')!=run['reviewed_snapshot_hash']:return True
-    return score_identity(view['settings'],run['reviewed_evidence'])!=run['cache_key']
+    if run.get('comparison_stale') or not run.get('input_snapshot'):return True
+    if view.get('comparison_snapshot_hash')!=run.get('input_hash'):return True
+    if view.get('comparison_reviewed_snapshot_hash')!=run.get('reviewed_snapshot_hash'):return True
+    if attribute_definitions()!=run['attribute_configuration']:return True
+    return method_identity(view['settings'],run['input_snapshot'],method)!=run['cache_key']
 
-def render_comparison(view,identifier,proposal):
-    run=view.get('score_run')
-    stale=score_stale(view) if run else False
-    score=next((a for a in run['result']['assessments'] if a['attribute_id']==identifier),None) if run and run.get('result') and run['status']=='completed' and not stale else None
+def score_stale(view):return method_stale(view,view.get('score_run'),'score')
+
+def result_for(view,method,identifier):
+    run=view.get('comparison_direct' if method=='direct' else 'score_run')
+    if not run or method_stale(view,run,method) or run.get('status')!='completed' or not run.get('result'):return None
+    return next((a for a in run['result']['assessments'] if a['attribute_id']==identifier),None)
+
+def details(item):
+    with st.expander('Evidence support and unresolved information'):
+        for name in ('low','high'):
+            support=item[name+'_support'];st.markdown('**'+name.title()+' support**')
+            st.text(support['explanation']);st.caption('Evidence IDs: '+(', '.join(support['evidence_ids']) or '—'))
+        for issue in item['unresolved_information']:
+            st.text(issue['issue']+' · '+issue['materiality']+' · '+issue['potential_assessment_impact'])
+        for flag in item['evidence_review_flags']:
+            st.text('Evidence review needed: '+flag['issue'])
+            if flag['page'] is not None:st.caption(f"Page {flag['page']} · {flag['section'] or 'Section not specified'}");st.text(flag['exact_quote'])
+        if not item['unresolved_information'] and not item['evidence_review_flags']:st.caption('No unresolved items or evidence-review flags returned.')
+
+def status(view,run,method):
+    stale=method_stale(view,run,method)
+    if stale:st.caption('Stale result · input or method version differs')
+    elif run:
+        source={'generated':'Generated and saved','database':'Loaded from database','retained_response':'Retained response · no new GPT call'}.get(run.get('result_source'),'Saved result')
+        st.caption(('Save pending · ' if run.get('save_pending') else '')+run['status'].title()+' · '+source+' · '+str(run['finished_at'] or 'Interrupted'))
+    else:st.caption('Missing result · click Load proposed beliefs')
+    error=view.get('direct_comparison_error' if method=='direct' else 'score_error')
+    if error:st.text(error)
+    if run and run['status'] not in {'completed','stale'}:
+        for issue in run.get('validation_errors',[]):st.text(issue)
+
+def render_comparison(view,identifier,proposal=None):
+    a=result_for(view,'direct',identifier);b=result_for(view,'score',identifier)
     left,right=st.columns(2)
     with left:
-        st.markdown('**Direct AI beliefs**')
-        distribution(proposal)
-        st.caption('Stale' if view.get('stale') else view.get('origin','Missing direct result' if view.get('direct_comparison_error') else 'Not loaded yet'))
-        if proposal:st.text(proposal['assessment_summary'])
-        elif view.get('direct_comparison_error'):st.caption(view['direct_comparison_error'])
+        st.markdown('**Direct AI beliefs**');distribution(a)
+        status(view,view.get('comparison_direct'),'direct')
+        if a:st.text(a['allocation_explanation']);details(a)
     with right:
-        st.markdown('**AI score → beliefs**')
-        if score:
-            st.text(f"Concern score: {score['concern_score']:g} / 5" if score['assessable'] else 'Not assessable')
-        else:st.text('Stale result' if stale else ('Missing result' if view.get('score_error') else 'Not loaded yet') if not run else run['status'].replace('_',' ').title())
-        distribution(score['beliefs'] if score else None)
-        if run:
-            st.caption(('Stale · ' if stale else '')+({'generated':'Generated and saved','retained_response':'Retained response saved · no new GPT call'}.get(run.get('result_source'),'Loaded from database'))+' · '+run['finished_at'])
-        if score:
-            st.text(score['explanation'])
-            with st.expander('Score evidence and information gaps'):
-                st.caption('Evidence IDs: '+(', '.join(score['supporting_evidence_ids']) or '—'))
-                st.write('Missing information: '+('; '.join(score['missing_information']) or 'No items returned in this response'))
-                st.write('Contradictions: '+('; '.join(score['contradictions']) or 'No items returned in this response'))
-        if run and run['status']!='completed':
-            for issue in run.get('validation_errors',[]):st.text(issue)
-        if view.get('score_error'):st.text(view['score_error'])
-    st.caption('Experimental Low/High membership mapping. An assessable score has Unknown = 0, so this initial method does not represent partial ignorance. Unassessable evidence has Unknown = 100%. Display only; ER/BRB use existing human-confirmed beliefs.')
-    if proposal and score:
-        differences=', '.join(f"{key.title()} {(score['beliefs'][key]-proposal[key])*100:+.1f}" for key in ('low','high','unknown'))
-        st.caption('Score − direct (percentage points): '+differences)
+        st.markdown('**Score + Unknown**')
+        if b:
+            minimum,maximum=view['score_run']['method_settings']['score_scale']['minimum'],view['score_run']['method_settings']['score_scale']['maximum']
+            st.text(f"Concern score: {b['concern_score']:g} / {maximum:g}" if b['assessable'] else 'Not assessable')
+            st.text(f"Unknown judgement: {b['unknown']*100:.1f}%")
+        distribution(b['beliefs'] if b else None);status(view,view.get('score_run'),'score')
+        if b:st.text(b['score_explanation']);st.text(b['unknown_explanation']);details(b)
+    if a and b:
+        st.caption('Method B − Method A (percentage points): '+', '.join(f"{key.title()} {(b['beliefs'][key]-a[key])*100:+.1f}" for key in ('low','high','unknown')))
+    st.caption('Experimental display-only comparison. Both methods use the same full-document/reviewed-evidence snapshot. Review flags do not add confirmed evidence. Existing human confirmations and ER/BRB inputs are unchanged.')

@@ -1,4 +1,4 @@
-"""Independent saved-first display-only concern scores; never an ER/BRB input."""
+"""Two independently saved, display-only comparison methods; canonical beliefs untouched."""
 import copy
 import hashlib
 import json
@@ -8,11 +8,12 @@ import uuid
 from underwriting.paths import PROJECT_ROOT
 from underwriting.configuration.settings import get_config,configuration_metadata
 from underwriting.configuration.access import require_owner
-from underwriting.assessment.evidence_schema import attribute_definitions,attribute_hash
-from underwriting.assessment.belief_service import content_hash,current_input,reviewed_snapshot_hash,propose_beliefs
-from underwriting.assessment.score_schema import METHOD_ID,MAPPING_VERSION,SCHEMA_VERSION,score_output_schema,validate_scores,response_only
+from underwriting.assessment.belief_service import current_input,content_hash,historical_definitions
+from underwriting.assessment.belief_schema import validate_beliefs
+from underwriting.assessment.comparison_context import freeze_context,snapshot_hash,current_matches,prompt_context,checked_pages
+from underwriting.assessment import score_schema,direct_comparison_schema
 from underwriting.intake.service import now,structured_request,request_failure
-from underwriting.reliability.inputs import generation_allowed,check_request
+from underwriting.reliability.inputs import generation_allowed,check_request,check_document
 from underwriting.reliability.recovery import recover_running
 from underwriting.persistence.intake import StoreError
 
@@ -20,137 +21,216 @@ ROOT=PROJECT_ROOT
 _guard=threading.Lock()
 _locks={}
 
-def score_prompt(case,reviewed,definitions=None):
-    definition=get_config()['prompts']['attribute_concern_scores']
-    values={'attribute_definitions_from_yaml':json.dumps(definitions if definitions is not None else attribute_definitions(),ensure_ascii=False,indent=2),
-            'case_id_and_source_version':f"Case ID: {case['case_id']}\nSource version: {case['submission_version']}",
-            'reviewed_attribute_evidence_json':json.dumps(reviewed,ensure_ascii=False,indent=2)}
+
+def spec(method):
+    if method=='direct':
+        return (direct_comparison_schema,'attribute_direct_comparison','comparison_direct','attribute_direct_comparison')
+    if method=='score':return (score_schema,'attribute_concern_scores','scores','attribute_concern_scores')
+    raise ValueError('Unknown comparison method.')
+
+
+def comparison_settings():
+    config=get_config()
+    return {k:copy.deepcopy(config['belief_comparison'][k]) for k in ('input_version','distribution_tolerance','score_scale')}|{'belief_granularity':config['belief_assessment']['increment']}
+
+
+def comparison_prompt(case,snapshot,method):
+    _,key,_,_=spec(method);definition=get_config()['prompts'][key]
+    scale=snapshot['assessment_guidance']['score_scale']
+    anchors='\n'.join(f"{a['score']:g} = {a['label']}" for a in scale['anchors'])
+    values={'shared_input_context_json':prompt_context(snapshot),'configured_concern_scale':anchors}
+    # One substitution only: text from the PDF is never treated as a template.
     prompt=re.sub(r'{{(\w+)}}',lambda match:values[match[1]],definition['template'])
-    return prompt,{'version':definition['version'],'sha256':hashlib.sha256(definition['template'].encode()).hexdigest(),'effective_sha256':hashlib.sha256(prompt.encode()).hexdigest()}
+    return prompt,{'version':definition['version'],'sha256':hashlib.sha256(definition['template'].encode()).hexdigest(),
+                   'effective_sha256':hashlib.sha256(prompt.encode()).hexdigest()}
 
-def score_identity(settings,reviewed,definitions=None):
-    definition=get_config()['prompts']['attribute_concern_scores']
-    return content_hash({'method_id':METHOD_ID,'mapping_version':MAPPING_VERSION,'schema_version':SCHEMA_VERSION,
-        'prompt_version':definition['version'],'prompt_hash':hashlib.sha256(definition['template'].encode()).hexdigest(),
-        'model':settings.model,'definitions':definitions if definitions is not None else attribute_definitions(),
-        'reviewed_snapshot_hash':reviewed_snapshot_hash(reviewed)})
 
-def retain_score(run):
+def method_identity(settings,snapshot,method):
+    schema,key,_,_=spec(method);definition=get_config()['prompts'][key]
+    return content_hash({'method_id':schema.METHOD_ID,'schema_version':schema.SCHEMA_VERSION,
+        'input_hash':snapshot['input_hash'],'prompt_version':definition['version'],
+        'prompt_hash':hashlib.sha256(definition['template'].encode()).hexdigest(),
+        'model':settings.model,'generation':dict(settings.generation),'method_settings':comparison_settings(),
+        'mapping_version':getattr(schema,'MAPPING_VERSION',None)})
+
+
+def score_identity(settings,snapshot,definitions=None):
+    return method_identity(settings,snapshot,'score')
+
+
+def validate_snapshot(snapshot):
+    if snapshot_hash(snapshot)!=snapshot['input_hash']:
+        raise ValueError('Comparison input snapshot failed its integrity check.')
+    if {k:v for k,v in snapshot['reviewed_evidence'].items() if k!='evidence_run_id'}!=snapshot['reviewed_material']:
+        raise ValueError('Reviewed evidence differs from the frozen comparison material.')
+    pages=checked_pages(snapshot['source'],snapshot['case']['source_hash'])
+    if snapshot['source']['page_labelled_text']!='\n\n'.join(f'[PAGE {i}]\n{page}' for i,page in enumerate(pages,1)):
+        raise ValueError('Page-labelled document text differs from saved pages.')
+
+
+def validate_result(data,snapshot,method,settings):
+    validate_snapshot(snapshot);schema,_,_,_=spec(method)
+    validator=direct_comparison_schema.validate_direct if method=='direct' else score_schema.validate_scores
+    return validator(data,snapshot['reviewed_evidence'],snapshot['attribute_configuration'],settings,snapshot['source']['pages'])
+
+
+def pending_directory(method):
+    return ROOT/('.comparison_direct_pending' if method=='direct' else '.score_pending')
+
+
+def retain(run):
     from underwriting.reliability.diagnostics import attach
-    attach(run,'Score comparison')
-    directory=ROOT/'.score_pending';directory.mkdir(exist_ok=True)
-    path=directory/(run['run_id']+'.json');temporary=path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(run,ensure_ascii=False,allow_nan=False),encoding='utf-8');temporary.replace(path)
+    attach(run,'Belief comparison')
+    directory=pending_directory(run['comparison_method']);directory.mkdir(exist_ok=True)
+    path=directory/(run['run_id']+'.json');temp=path.with_suffix('.tmp')
+    temp.write_text(json.dumps(run,ensure_ascii=False,allow_nan=False),encoding='utf-8');temp.replace(path)
 
-def pending_scores(case,digest):
-    directory=ROOT/'.score_pending'
+
+def pending_comparisons(case,digest,method):
+    directory=pending_directory(method)
     if not directory.exists():return []
     values=[json.loads(p.read_text(encoding='utf-8')) for p in directory.glob('*.json')]
     return [v for v in values if (v['case_id'],v['source_version'],v['source_hash'])==(case['case_id'],case['submission_version'],digest)]
 
-def retry_score_save(settings,store,run):
+
+def pending_scores(case,digest):return pending_comparisons(case,digest,'score')
+
+
+def retry_comparison_save(settings,store,run):
     require_owner(settings)
+    if run.get('comparison_method') not in {'direct','score'}:
+        raise ValueError('Historical score response retained in its original format; owner review is required.')
+    method=run['comparison_method'];schema,_,suffix,_=spec(method)
+    if run['method_id']!=schema.METHOD_ID:raise ValueError('Historical method version requires owner review.')
+    snapshot=run['input_snapshot'];validate_snapshot(snapshot)
+    def validate_received(record):
+        record.update(result=validate_result(json.loads(record['response_text']),snapshot,method,record['method_settings']),status='validated')
     if run['status']=='running':
-        def validate_retained(record):
-            record.update(result=validate_scores(json.loads(record['response_text']),record['reviewed_evidence'],record['attribute_configuration']),status='completed')
-        run=recover_running(run,settings,validate_retained,'Score comparison',lock=_locks.get(run['cache_key']))
-        retain_score(run)
-    if run['status'] not in {'completed','failed','stale'}:
-        raise ValueError('The score request is still running; no automatic new request is allowed.')
-    if run['result']:
-        expected=validate_scores(response_only(run['result']),run['reviewed_evidence'],run['attribute_configuration'])
-        if expected!=run['result']:raise ValueError('Retained score mapping failed integrity validation.')
-    run.pop('persistence_error',None)
+        run=recover_running(run,settings,validate_received,'Belief comparison',lock=_locks.get(run['scope_key']))
+        retain(run)
     try:
-        store.initialise_scores();store.save_scores(run)
+        if run['status']=='validated':
+            case={'case_id':run['case_id'],'submission_version':run['source_version'],'document_path':run['document_path']}
+            run.update(status='completed' if current_matches(case,store,snapshot) else 'stale',validation_errors=[])
+        if run['status'] not in {'completed','failed','stale'}:raise ValueError('Comparison request may still be running. No automatic GPT retry.')
+        if run['result']:
+            raw=score_schema.response_only(run['result']) if method=='score' else run['result']
+            if validate_result(raw,snapshot,method,run['method_settings'])!=run['result']:
+                raise ValueError('Saved comparison values failed validation.')
+        run.pop('persistence_error',None)
+        getattr(store,'initialise_'+suffix)();getattr(store,'save_'+suffix)(run)
     except Exception:
-        run['persistence_error']=True;retain_score(run);raise
-    (ROOT/'.score_pending'/(run['run_id']+'.json')).unlink(missing_ok=True)
+        run['persistence_error']=True;retain(run);raise
+    (pending_directory(method)/(run['run_id']+'.json')).unlink(missing_ok=True)
     return run
 
-def saved_score(settings,case,store,context):
-    digest,_,reviewed,review_hash,_=context
-    key=score_identity(settings,reviewed)
-    saved=store.latest_scores(case,digest,review_hash,key)
-    if saved:
-        result=validate_scores(response_only(saved['result']),reviewed,saved['attribute_configuration'])
-        if result!=saved['result'] or saved['method_id']!=METHOD_ID or saved['reviewed_snapshot_hash']!=reviewed_snapshot_hash(reviewed):
-            raise ValueError('Saved score result failed method/snapshot/mapping validation.')
-    return saved,key
 
-def propose_scores(settings,case,store,context,request=None,progress=None,regenerate=False,confirmed=False,expected_run=None):
-    report=progress or (lambda stage,detail:None)
-    context=copy.deepcopy(context)
-    digest,evidence,reviewed,review_hash,versions=context
-    saved,key=saved_score(settings,case,store,context)
+def retry_score_save(settings,store,run):return retry_comparison_save(settings,store,run)
+
+
+def latest(store,case,snapshot,method,key=None,successful=True):
+    _,_,suffix,_=spec(method)
+    return getattr(store,'latest_'+suffix)(case,snapshot['source']['source_hash'],snapshot['upstream']['reviewed_hash'],key,successful=successful)
+
+
+def saved_method(settings,case,store,snapshot,method):
+    schema,_,_,_=spec(method);key=method_identity(settings,snapshot,method)
+    run=latest(store,case,snapshot,method,key)
+    if run:
+        if run.get('method_id')!=schema.METHOD_ID or run.get('input_hash')!=snapshot['input_hash']:
+            raise ValueError('Saved comparison method/input version is inconsistent.')
+        raw=score_schema.response_only(run['result']) if method=='score' else run['result']
+        if validate_result(raw,snapshot,method,run['method_settings'])!=run['result']:
+            raise ValueError('Saved comparison values are inconsistent.')
+    return run,key
+
+
+def propose_method(settings,case,store,snapshot,method,request=None,progress=None,regenerate=False,confirmed=False,expected_run=None):
+    snapshot=copy.deepcopy(snapshot);report=progress or (lambda stage,detail:None)
+    saved,key=saved_method(settings,case,store,snapshot,method)
     if saved and not regenerate:return dict(saved,result_source='database')
-    with _guard:lock=_locks.setdefault(key,threading.Lock())
-    if not lock.acquire(blocking=False):raise ValueError('A score comparison for these inputs is already running.')
+    schema,_,suffix,request_name=spec(method)
+    scope=content_hash([method,case['case_id'],case['submission_version'],snapshot['source']['source_hash'],key])
+    with _guard:lock=_locks.setdefault(scope,threading.Lock())
+    if not lock.acquire(blocking=False):raise ValueError('This comparison method is already running.')
     try:
-        # Recheck under the lock: another request may have finished just now.
-        saved,_=saved_score(settings,case,store,context)
+        saved,_=saved_method(settings,case,store,snapshot,method)
         if saved and not regenerate:return dict(saved,result_source='database')
         if settings.service_mode=='turso_readonly':
-            older=store.latest_scores(case,digest,review_hash)
+            older=latest(store,case,snapshot,method)
             if older:return dict(older,result_source='database',comparison_stale=True)
         require_owner(settings)
         from underwriting.reliability.prerequisites import assessment_entry
-        assessment_entry(case,store,digest)
-        current=current_input(case,store)
-        if current[0]!=digest or current[3]!=review_hash or reviewed_snapshot_hash(current[2])!=reviewed_snapshot_hash(reviewed):
-            raise ValueError('Reviewed evidence changed; reload both proposed-belief methods before generation.')
-        previous=store.latest_scores(case,digest,review_hash,key,successful=False)
+        assessment_entry(case,store,snapshot['source']['source_hash'])
+        if not current_matches(case,store,snapshot):raise ValueError('Shared input changed. Reload both methods before generating.')
+        previous=latest(store,case,snapshot,method,key,successful=False)
         if regenerate and (not confirmed or (previous['run_id'] if previous else None)!=expected_run):
-            raise PermissionError('Confirm score-only regeneration against the current attempt first.')
+            raise PermissionError('Explicitly confirm this method retry against its current attempt.')
         if previous and not regenerate:return dict(previous,result_source='database')
-        if pending_scores(case,digest):raise ValueError('A score response is retained. Retry save without another GPT call.')
+        retained=[v for v in pending_comparisons(case,snapshot['source']['source_hash'],method) if v.get('cache_key')==key]
+        if retained:return dict(retained[-1],result_source='retained_response',save_pending=True)
         generation_allowed(settings,request is not None)
         if settings.missing():raise ValueError('Missing configuration: '+', '.join(settings.missing()))
-        definitions=copy.deepcopy(attribute_definitions())
-        prompt,metadata=score_prompt(case,reviewed,definitions)
+        prompt,metadata=comparison_prompt(case,snapshot,method)
+        check_document(snapshot['source']['pages'],settings.model)
         size=check_request('',prompt,settings.model)
         identifier=uuid.uuid4().hex
-        store.initialise_scores()
-        generation=content_hash([METHOD_ID,case['case_id'],case['submission_version'],digest,key,previous['run_id'] if previous else None])
-        if not store.claim(generation,identifier,None):raise ValueError('This score request was already reserved; no duplicate GPT request.')
-        run={'run_id':identifier,'case_id':case['case_id'],'source_version':case['submission_version'],'source_hash':digest,
-             'method_id':METHOD_ID,'mapping_version':MAPPING_VERSION,'schema_version':SCHEMA_VERSION,'cache_key':key,
-             'reviewed_hash':review_hash,'reviewed_snapshot_hash':reviewed_snapshot_hash(reviewed),'reviewed_evidence':reviewed,
-             'evidence_run_id':evidence['run_id'],'evidence_review_versions':versions,'attribute_configuration':definitions,
-             'attribute_configuration_hash':attribute_hash(),'prompt':metadata,'configuration':configuration_metadata(),'model':settings.model,
-             'started_at':now(),'finished_at':None,'timeout_seconds':settings.timeout_seconds,'input_size':size,
-             'status':'running','raw_response':None,'response_text':None,'usage':None,'result':None,'validation_errors':[]}
-        retain_score(run)
+        getattr(store,'initialise_'+suffix)()
+        if not store.claim(content_hash([scope,previous['run_id'] if previous else None]),identifier,None):
+            raise ValueError('This method request was already reserved. No duplicate GPT call.')
+        method_config=comparison_settings()
+        output_schema=schema.direct_output_schema(snapshot['attribute_configuration'],method_config) if method=='direct' else schema.score_output_schema(snapshot['attribute_configuration'],method_config)
+        run={'run_id':identifier,'case_id':case['case_id'],'source_version':case['submission_version'],'source_hash':snapshot['source']['source_hash'],
+            'document_path':case['document_path'],'comparison_method':method,'method_id':schema.METHOD_ID,'schema_version':schema.SCHEMA_VERSION,
+            'mapping_version':getattr(schema,'MAPPING_VERSION',None),'scope_key':scope,'cache_key':key,'input_hash':snapshot['input_hash'],
+            'input_snapshot':snapshot,'reviewed_hash':snapshot['upstream']['reviewed_hash'],
+            'reviewed_snapshot_hash':snapshot['upstream']['reviewed_snapshot_hash'],'reviewed_evidence':snapshot['reviewed_evidence'],
+            'evidence_run_id':snapshot['upstream']['evidence_run_id'],'evidence_review_versions':snapshot['upstream']['evidence_review_versions'],
+            'attribute_configuration':snapshot['attribute_configuration'],'method_settings':method_config,
+            'prompt':metadata,'prompt_snapshot':copy.deepcopy(get_config()['prompts'][spec(method)[1]]),
+            'configuration':configuration_metadata(),'requested_model':settings.model,'model':settings.model,'generation_settings':dict(settings.generation),
+            'started_at':now(),'finished_at':None,'timeout_seconds':settings.timeout_seconds,'input_size':size,
+            'status':'running','raw_response':None,'response_text':None,'usage':None,'result':None,'validation_errors':[]}
+        retain(run)
         try:
-            report('GPT score method','One separate concern-score request for all enabled attributes.')
-            raw,text=(request or structured_request)(settings,'',prompt,score_output_schema(definitions),'attribute_concern_scores')
-            run.update(raw_response=raw,response_text=text,usage=raw.get('usage'),model=raw.get('model',settings.model))
-            retain_score(run)
-            if raw.get('status','completed')!='completed' or not text:raise ValueError('Incomplete score response or refusal.')
-            run['result']=validate_scores(json.loads(text),reviewed,definitions)
-            after=current_input(case,store)
-            run['status']='completed' if after[0]==digest and after[3]==review_hash and reviewed_snapshot_hash(after[2])==reviewed_snapshot_hash(reviewed) else 'stale'
-            if run['status']=='stale':run['validation_errors']=['Reviewed evidence changed during score generation.']
+            report('GPT '+method,'One independent '+method+' request for all enabled attributes against the shared full-document input.')
+            raw,text=(request or structured_request)(settings,'',prompt,output_schema,request_name)
+            run.update(raw_response=raw,response_text=text,usage=raw.get('usage'),model=raw.get('model',settings.model));retain(run)
+            if raw.get('status','completed')!='completed' or not text:raise ValueError('Incomplete response or refusal.')
+            run.update(result=validate_result(json.loads(text),snapshot,method,method_config),status='validated')
+            run.update(status='completed' if current_matches(case,store,snapshot) else 'stale')
+        except StoreError:
+            run.update(status='validated' if run['result'] else 'failed',validation_errors=['Saved-input recheck unavailable; retry save without repeating GPT.'])
         except Exception as error:
             run.update(status='failed',validation_errors=[str(error)[:4000]] if run['raw_response'] and isinstance(error,ValueError) else [request_failure(error,settings.timeout_seconds)['message']])
-        run['finished_at']=now();retain_score(run)
-        report('Save score method','Saving the separate score response and deterministic membership distribution.')
-        result=retry_score_save(settings,store,run)
+        run['finished_at']=now();retain(run)
+        report('Save '+method,'Saving this method separately; canonical confirmations are untouched.')
+        try:result=retry_comparison_save(settings,store,run)
+        except StoreError:return dict(run,result_source='retained_response',save_pending=True)
         return dict(result,result_source='generated')
     finally:lock.release()
 
+
+def propose_scores(settings,case,store,context,**kwargs):
+    snapshot=context if isinstance(context,dict) else freeze_context(settings,case,store,context)
+    return propose_method(settings,case,store,snapshot,'score',**kwargs)
+
+
 def compare_beliefs(settings,case,store,request_a=None,request_b=None,progress=None,context=None):
-    """Freeze once, preflight both stores, and independently reuse/generate methods."""
-    frozen=copy.deepcopy(context if context is not None else current_input(case,store))
-    digest,_,reviewed,review_hash,_=frozen
-    # A database failure in either lookup blocks new generation, never becomes a miss.
-    store.latest_beliefs(case,digest,review_hash)
-    saved_score(settings,case,store,frozen)
-    result={'direct':None,'score':None,'direct_error':None,'score_error':None,'snapshot_hash':reviewed_snapshot_hash(reviewed)}
-    try:
-        result['direct']=propose_beliefs(settings,case,store,request=request_a,progress=progress,reviewed_input=frozen)
-    except (PermissionError,ValueError) as error:result['direct_error']=str(error)
-    try:
-        result['score']=propose_scores(settings,case,store,frozen,request=request_b,progress=progress)
-    except (PermissionError,ValueError,StoreError) as error:result['score_error']=str(error)
+    snapshot=freeze_context(settings,case,store,context)
+    # Complete DB lookups before either paid request. DB errors never become misses.
+    canonical=store.latest_beliefs(case,snapshot['source']['source_hash'],snapshot['upstream']['reviewed_hash'])
+    canonical_error=None
+    if canonical:
+        try:validate_beliefs(canonical['result'],canonical['reviewed_evidence'],canonical['assessment_settings'],definitions=historical_definitions(canonical))
+        except ValueError as error:canonical_error=str(error);canonical=None
+    result={'canonical_error':canonical_error,'direct':None,'score':None,'canonical':canonical,'direct_error':None,'score_error':None,'snapshot_hash':snapshot['input_hash'],'input_snapshot':snapshot}
+    invalid={}
+    for method in ('direct','score'):
+        try:saved_method(settings,case,store,snapshot,method)
+        except ValueError as error:invalid[method]=str(error)
+    for method,request in (('direct',request_a),('score',request_b)):
+        if method in invalid:result[method+'_error']=invalid[method];continue
+        try:result[method]=propose_method(settings,case,store,snapshot,method,request=request,progress=progress)
+        except (PermissionError,ValueError,StoreError) as error:result[method+'_error']=str(error)
     return result
