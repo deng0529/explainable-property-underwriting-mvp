@@ -24,3 +24,5 @@ dist/
 Thumbs.db
 
 .decision_pending/
+
+.score_pending/

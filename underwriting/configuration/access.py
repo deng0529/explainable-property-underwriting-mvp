@@ -26,10 +26,10 @@ class Settings:
     allowed_test_database_hosts: tuple = ()
 
     def missing(self, paid=True):
-        prefix = "" if self.service_mode == "turso_readonly" else "V2_"
+        prefix = "" if self.service_mode in {"turso_readonly","comparison_owner"} else "V2_"
         pairs = [] if self.service_mode == "offline" else [(prefix+"TURSO_DATABASE_URL", self.database_url), (prefix+"TURSO_AUTH_TOKEN", self.database_token)]
         if paid and self.service_mode != "turso_readonly":
-            pairs += [("V2_OPENAI_API_KEY", self.api_key), ("llm.model", self.model)]
+            pairs += [(prefix+"OPENAI_API_KEY", self.api_key), ("llm.model", self.model)]
         return [name for name, value in pairs if not value]
 
 
@@ -73,7 +73,31 @@ def local_server():
     return st.get_option("server.address") in {"127.0.0.1", "::1"}
 
 
+def comparison_available(settings):
+    config=get_config()
+    return (config['belief_comparison']['enabled'] and config['belief_comparison']['local_owner_enabled']
+            and config['access']['mode']=='local_owner' and local_server()
+            and os.environ.get('UNDERWRITING_PROFILE','')!='public_readonly')
+
+
+def local_comparison_settings(settings):
+    """Explicit local-only proposal experiment. Never grant access to public clients."""
+    if not comparison_available(settings):
+        return settings
+    if settings.service_mode!='turso_readonly':
+        return settings  # Existing offline/test owner controls still apply.
+    path=get_config()['services'].get('credential_env_path')
+    values=dotenv_values(path) if path else {}
+    def value(*names):
+        return next((source[name] for source in (os.environ,values) for name in names if source.get(name)),'')
+    return Settings(value('V2_OPENAI_API_KEY','OPENAI_API_KEY'),settings.model,
+        settings.database_url,settings.database_token,'local_owner',settings.timeout_seconds,
+        dict(settings.generation),'comparison_owner')
+
+
 def require_owner(settings, proof=None):
+    if settings.service_mode=="comparison_owner" and not comparison_available(settings):
+        raise PermissionError("The proposal comparison experiment requires an explicitly enabled local owner on loopback.")
     if settings.service_mode=='turso_readonly':
         raise PermissionError('Saved-results-only Turso connection: GPT requests, calculations and all database writes are disabled.')
     # Mode comes from server settings, never a client widget or session boolean.
@@ -83,6 +107,9 @@ def require_owner(settings, proof=None):
 
 def require_test_services(settings, *, generation=False):
     """Explicit test-only egress; legacy/global V1 credentials are never loaded."""
+    if settings.service_mode == 'comparison_owner':
+        require_owner(settings)
+        return
     if settings.service_mode == 'turso_readonly':
         if generation:
             raise PermissionError('Saved-results-only Turso connection: GPT generation is disabled. Load existing saved results instead.')

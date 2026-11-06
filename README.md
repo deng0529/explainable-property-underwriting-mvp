@@ -1,3 +1,36 @@
+Temporary belief comparison (6 November 2026):
+
+- Prompt A remains unchanged at `prompts.attribute_beliefs.template` in
+  `config/settings.yaml`. Prompt B is separate at
+  `prompts.attribute_concern_scores.template` with its own version and schema.
+- The explicit **Load proposed beliefs** action freezes reviewed evidence once,
+  checks both stores before generation, reuses each valid result, and sends one
+  request per missing method, each covering all enabled attributes. No startup,
+  navigation or attribute selection generates results.
+- Direct runs remain in `attribute_belief_runs_v1`; score runs append to the
+  separate `attribute_concern_score_runs_v2` table with method, mapping, prompt,
+  model, source, reviewed-snapshot and review-version metadata. Old direct records
+  require no migration. Historical results and confirmations are preserved.
+- For assessable score s, Low=(5-s)/4, High=(s-1)/4, Unknown=0. For unassessable
+  evidence the score is null and Unknown=1. Score 2 gives 75%/25%; 2.6 gives
+  60%/40%. These are memberships, not probabilities. Partial ignorance is not
+  represented for assessable scores. Invalid scores are rejected, never clamped.
+- Scores are display-only. They cannot be confirmed into the existing human
+  belief records or used by ER/BRB. Generating comparison output alone does not
+  invalidate downstream results. A/B are displayed side by side per attribute.
+- The user explicitly authorized local-owner generation against existing Turso.
+  `belief_comparison.local_owner_enabled: true` permits ONLY proposal generation
+  and append-only proposal storage on the loopback local app. Other workflows
+  and human confirmation controls retain their current access settings.
+  Public `cloud_app.py` remains read-only; no API/write access is granted there.
+  The local experiment reads the existing configured credential file without
+  copying values. `OPENAI_API_KEY` is needed only when a method is missing.
+- Received score responses are retained in ignored `.score_pending/`. Use
+  **Score comparison recovery / regenerate** for save-only retry or an explicitly
+  confirmed score-only new attempt. Failed attempts preserve prior success.
+- No paid call or live database write was made during development. The score
+  table is created only by the owner's first explicit generation/save action.
+
 The interface is titled **Explainable Property Underwriting**, with a small
 Version 2 label and an About this MVP scope note (Fire and Security only).
 Technical run diagnostics are retained internally and no longer appear as UI

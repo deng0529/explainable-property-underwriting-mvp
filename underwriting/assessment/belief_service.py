@@ -23,6 +23,10 @@ def content_hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
+def reviewed_snapshot_hash(reviewed):
+    return content_hash({k:v for k,v in reviewed.items() if k!='evidence_run_id'})
+
+
 def reviewed_set(evidence, events):
     if not evidence or evidence["status"] != "completed":
         raise ValueError("Load valid attribute evidence before proposing beliefs.")
@@ -139,13 +143,13 @@ def retry_belief_save(settings, store, run):
     return run
 
 
-def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, expected_run=None, request=None, progress=None):
+def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, expected_run=None, request=None, progress=None, reviewed_input=None):
     injected_request = request is not None
     request = request or structured_request
     report = progress or (lambda stage, detail: None)
     report("Evidence", "Checking current source and the complete reviewed evidence set in Turso.")
     from underwriting.reliability.prerequisites import reviewed_context
-    digest, evidence, reviewed, review_hash, versions = reviewed_context(case, store)
+    digest, evidence, reviewed, review_hash, versions = copy.deepcopy(reviewed_input) if reviewed_input is not None else reviewed_context(case, store)
     scope = (case["case_id"], case["submission_version"], digest, review_hash)
     with _guard:
         lock = _locks.setdefault(scope, threading.Lock())
@@ -188,6 +192,7 @@ def propose_beliefs(settings, case, store, regenerate=False, confirmed=False, ex
         assessment_settings = copy.deepcopy(get_config()["belief_assessment"])
         run = {"run_id": identifier, "case_id": scope[0], "source_version": scope[1], "source_hash": digest,
                "reviewed_hash": review_hash, "reviewed_evidence": reviewed, "evidence_run_id": evidence["run_id"],
+               "method_id":"direct_ai_beliefs_v1", "reviewed_snapshot_hash":reviewed_snapshot_hash(reviewed),
                "evidence_review_versions": versions, "prompt": metadata, "attribute_configuration_hash": attribute_hash(),
                "attribute_configuration": copy.deepcopy(attribute_definitions()),
                "assessment_settings": assessment_settings, "assessment_settings_hash": content_hash(assessment_settings),

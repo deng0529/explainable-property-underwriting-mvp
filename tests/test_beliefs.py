@@ -61,6 +61,7 @@ class BeliefTests(unittest.TestCase):
         self.case = {"case_id": "TEST-BELIEF", "submission_version": "1", "document_path": "unused.pdf"}
         self.patches = [patch("underwriting.configuration.access.local_server", return_value=True),
                         patch("underwriting.assessment.belief_service.ROOT", Path(self.temp.name)),
+                        patch("underwriting.assessment.score_service.ROOT", Path(self.temp.name)),
                         patch("underwriting.assessment.belief_service.document_hash", return_value="mock-source")]
         for patched in self.patches:
             patched.start()
@@ -196,7 +197,8 @@ class BeliefTests(unittest.TestCase):
              patch("underwriting.ui.beliefs.document_hash", return_value="mock-source"), \
              patch("underwriting.ui.evidence.document_hash", return_value="mock-source"), \
              patch("underwriting.ui.beliefs.BeliefStore", return_value=self.store), \
-             patch("underwriting.assessment.belief_service.structured_request", self.request):
+             patch("underwriting.assessment.belief_service.structured_request", self.request), \
+             patch("underwriting.assessment.score_service.structured_request", side_effect=AssertionError("No external score request in legacy UI test")):
             app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
             self.request.assert_not_called()
             self.assertFalse(app.exception)
@@ -215,7 +217,7 @@ class BeliefTests(unittest.TestCase):
             self.assertTrue(any("Belief source: GPT" in item.value for item in app.caption))
             self.assertEqual(app.session_state[prefix + ":assessment_stage"], "Beliefs")
             self.assertEqual(len(app.segmented_control), 0)
-            self.assertTrue(any(item.value == "**AI-proposed beliefs**" for item in next(tab for tab in app.tabs if tab.label == "Assessment").markdown))
+            self.assertTrue(any(item.value == "**Direct AI beliefs**" for item in next(tab for tab in app.tabs if tab.label == "Assessment").markdown))
             self.assertFalse(any(item.label == "Human evidence review" for item in next(tab for tab in app.tabs if tab.label == "Assessment").expander))
             self.assertFalse(any(item.value == "Fire and Security ER results" for item in next(tab for tab in app.tabs if tab.label == "Assessment").subheader))
             for name in ["F1 Combustible storage", "F2 Ignition controls", "F3 Fire protection", "S1 Access protection", "S2 Intrusion detection"]:

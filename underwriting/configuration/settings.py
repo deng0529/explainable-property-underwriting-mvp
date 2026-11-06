@@ -121,6 +121,14 @@ def validate(data):
     template = text(beliefs_prompt, "template", "prompts.attribute_beliefs")
     if set(re.findall(r"{{(\w+)}}", template)) != {"belief_increment", "attribute_definitions_from_yaml", "case_id_and_source_version", "reviewed_attribute_evidence_json"}:
         raise ConfigError("prompts.attribute_beliefs.template: required placeholders are missing or unknown.")
+    score_prompt = required(prompts, "attribute_concern_scores", dict, "prompts")
+    text(score_prompt, "version", "prompts.attribute_concern_scores")
+    template = text(score_prompt, "template", "prompts.attribute_concern_scores")
+    if set(re.findall(r"{{(\w+)}}", template)) != {"attribute_definitions_from_yaml", "case_id_and_source_version", "reviewed_attribute_evidence_json"}:
+        raise ConfigError("prompts.attribute_concern_scores.template: required placeholders are missing or unknown.")
+    comparison = required(data,"belief_comparison",dict)
+    required(comparison,"enabled",bool,"belief_comparison")
+    required(comparison,"local_owner_enabled",bool,"belief_comparison")
     decision_prompt = required(prompts, "decision_review", dict, "prompts")
     text(decision_prompt, "version", "prompts.decision_review")
     text(decision_prompt, "system", "prompts.decision_review")

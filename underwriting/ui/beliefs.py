@@ -3,6 +3,10 @@ from decimal import Decimal
 
 import streamlit as st
 from underwriting.ui.diagnostics import source_label
+from underwriting.configuration.access import comparison_available, local_comparison_settings
+from underwriting.assessment.score_service import compare_beliefs, propose_scores, pending_scores, retry_score_save
+from underwriting.ui.score_comparison import render_comparison
+from underwriting.assessment.belief_service import reviewed_snapshot_hash
 
 from underwriting.configuration.settings import get_config, configuration_metadata
 from underwriting.ui.intake import settings_for_ui, authorised
@@ -21,6 +25,7 @@ def active_run(view):
 def belief_controls(case, prefix, evidence_view, button_slot=None):
     settings = settings_for_ui()
     owner = authorised(settings)
+    can_generate = owner or comparison_available(settings)
     try:
         digest = document_hash(case)
     except OSError:
@@ -30,7 +35,8 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
     prerequisite = evidence_blocker(evidence_view)
     if view["run"] and evidence_view.get("run"):
         try:
-            _, review_hash, _ = reviewed_set(evidence_view["run"], evidence_view["reviews"])
+            current_reviewed, review_hash, _ = reviewed_set(evidence_view["run"], evidence_view["reviews"])
+            view["comparison_snapshot_hash"]=reviewed_snapshot_hash(current_reviewed)
             from underwriting.assessment.belief_service import reviewed_hash_matches
             view["stale"] = not reviewed_hash_matches(evidence_view["run"],evidence_view["reviews"],view["run"]["reviewed_hash"])
         except ValueError:
@@ -58,18 +64,33 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                 status.update(label="Beliefs · " + stage)
                 status.write(stage + ": " + detail)
             try:
-                digest_now, evidence, reviewed, review_hash, _ = current_input(case, store)
+                digest_now, evidence, reviewed, review_hash, review_versions = current_input(case, store)
                 # This explicit action also loads the underlying reviewed evidence, never GPT evidence extraction.
                 events = store.reviews(evidence["run_id"])
                 evidence_view.update(run=evidence, reviews=events, origin="Turso database · no GPT call")
                 evidence_key = f"{prefix}:{case['submission_version']}:{digest}:evidence"
                 st.session_state[evidence_key] = {"run": evidence, "reviews": events, "attempt": evidence, "pending": [], "origin": "Turso database · no GPT call"}
                 view["attempt"] = store.latest_beliefs(case, digest_now, review_hash, successful=False)
-                view["pending"] = pending_beliefs(case, digest) if owner else []
+                view["pending"] = pending_beliefs(case, digest) if can_generate else []
                 if view["pending"]:
                     raise ValueError("A belief response is retained. Use Retry save without GPT.")
-                result = propose_beliefs(settings, case, store, regenerate=regenerate, confirmed=regenerate,
-                                        expected_run=expected, progress=report)
+                generation_settings=local_comparison_settings(settings)
+                generation_store=store if generation_settings is settings else BeliefStore(generation_settings)
+                frozen=(digest_now,evidence,reviewed,review_hash,review_versions)
+                if regenerate:
+                    result=propose_beliefs(generation_settings,case,generation_store,regenerate=True,confirmed=True,
+                                          expected_run=expected,progress=report,reviewed_input=frozen)
+                elif get_config()['belief_comparison']['enabled']:
+                    compared=compare_beliefs(generation_settings,case,generation_store,progress=report,context=frozen)
+                    result=compared['direct']
+                    view.update(score_run=compared['score'],score_error=compared['score_error'],
+                                direct_comparison_error=compared['direct_error'],comparison_snapshot_hash=compared['snapshot_hash'])
+                else:
+                    result=propose_beliefs(settings,case,store,expected_run=expected,progress=report,reviewed_input=frozen)
+                if result is None:
+                    activate_stage(st.session_state,prefix,'Beliefs')
+                    status.update(label='Comparison loaded with a missing direct result',state='complete',expanded=False)
+                    return
                 from underwriting.ui.diagnostics import remember
                 remember(view,"Beliefs",result,source="generated_response" if used_gpt else "saved_database_result")
                 view["attempt"] = result
@@ -86,15 +107,14 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                 if result["status"] == "completed":
                     st.rerun()
             except (ValueError, PermissionError, OSError, StoreError) as error:
-                view["pending"] = pending_beliefs(case, digest) if owner else []
+                view["pending"] = pending_beliefs(case, digest) if can_generate else []
                 st.session_state[key] = view
                 status.update(label="Belief proposal stopped", state="error")
                 st.error(str(error))
     button = button_slot.button if button_slot is not None else st.button
     if stage_button(button_slot if button_slot is not None else st, "Load proposed beliefs", prefix, "Beliefs", permitted=not prerequisite and store is not None, key=f"{prefix}:Propose beliefs", width="stretch",
               help=prerequisite or "Check Turso first for this reviewed evidence; only missing proposals require a GPT request."):
-        if prerequisite or not active_run(view):
-            action()
+        action()
     if st.session_state.get(prefix + ":assessment_stage", "Evidence") != "Beliefs":
         return dict(view, settings=settings, store=store, case=case, prerequisite=prerequisite)
     from underwriting.ui.diagnostics import render
@@ -125,17 +145,19 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                 st.text(issue)
     with st.expander("Regenerate beliefs with GPT"):
         st.caption("A successful regeneration becomes the current proposal set for this reviewed evidence. Earlier records remain in audit history; a failed attempt does not replace the current result.")
-        confirmed = st.checkbox("Confirm one paid belief request; preserve earlier proposals", disabled=not owner,
+        confirmed = st.checkbox("Confirm one paid belief request; preserve earlier proposals", disabled=not can_generate,
             key=f"{prefix}:{digest}:confirm_beliefs:{view['attempt']['run_id'] if view['attempt'] else 'initial'}")
-        if st.button("Regenerate beliefs with GPT", disabled=not owner or not confirmed or store is None or bool(settings.missing()) or bool(prerequisite),
+        if st.button("Regenerate beliefs with GPT", disabled=not can_generate or not confirmed or store is None or bool(prerequisite),
                      key=f"{prefix}:regenerate_beliefs"):
             action(True)
     for run in view["pending"]:
         st.warning("Belief response retained locally; retry saving without a GPT request.")
-        if st.button("Retry save · beliefs · no GPT call", disabled=not owner or store is None,
+        if st.button("Retry save · beliefs · no GPT call", disabled=not can_generate or store is None,
                      key=f"{prefix}:belief_retry:{run['run_id']}"):
             try:
-                run = retry_belief_save(settings, store, run)
+                recovery_settings=local_comparison_settings(settings)
+                recovery_store=store if recovery_settings is settings else BeliefStore(recovery_settings)
+                run = retry_belief_save(recovery_settings, recovery_store, run)
                 view["pending"] = []
                 view["attempt"] = run
                 if run["status"] == "completed":
@@ -148,6 +170,31 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                 from underwriting.ui.diagnostics import remember
                 remember(view,"Beliefs",error=error)
                 st.error(str(error))
+    if get_config()['belief_comparison']['enabled'] and can_generate and store is not None:
+        with st.expander('Score comparison recovery / regenerate'):
+            st.caption('Score method only. Earlier score runs and all direct confirmations are preserved.')
+            for retained in pending_scores(case,digest):
+                if st.button('Retry save · score · no GPT call',key=prefix+':score_retry:'+retained['run_id']):
+                    try:
+                        gs=local_comparison_settings(settings)
+                        saved=retry_score_save(gs,BeliefStore(gs) if gs is not settings else store,retained)
+                        view.update(score_run=dict(saved,result_source="retained_response"),score_error=None)
+                        st.rerun()
+                    except (ValueError,PermissionError,OSError,StoreError) as error:st.error(str(error))
+            confirm_score=st.checkbox('Confirm one new paid score-only request',key=prefix+':confirm_score_regenerate')
+            if st.button('Regenerate score method only',disabled=not confirm_score or bool(prerequisite),key=prefix+':score_regenerate'):
+                try:
+                    gs=local_comparison_settings(settings);ss=BeliefStore(gs) if gs is not settings else store
+                    context=current_input(case,ss)
+                    from underwriting.assessment.score_service import score_identity
+                    previous=ss.latest_scores(case,context[0],context[3],score_identity(gs,context[2]),successful=False)
+                    score=propose_scores(gs,case,ss,context,regenerate=True,confirmed=True,expected_run=previous['run_id'] if previous else None)
+                    if score["status"]=="completed":
+                        view.update(score_run=score,score_error=None,comparison_snapshot_hash=reviewed_snapshot_hash(context[2]))
+                    else:
+                        view["score_error"]="New score attempt "+score["status"]+"; earlier successful comparison is preserved. "+"; ".join(score["validation_errors"])
+                    st.rerun()
+                except (ValueError,PermissionError,OSError,StoreError) as error:st.error(str(error))
     return dict(view, settings=settings, store=store, case=case, prerequisite=prerequisite)
 
 
@@ -180,12 +227,16 @@ def display_distribution(label, values):
 def belief_details(view, identifier):
     proposal = proposal_for(view, identifier)
     event = confirmed_for(view, identifier)
-    display_distribution("AI-proposed beliefs", proposal)
+    if get_config()["belief_comparison"]["enabled"]:
+        render_comparison(view,identifier,proposal)
+    else:
+        display_distribution("AI-proposed beliefs", proposal)
     display_distribution("Human-confirmed beliefs", event["values"] if event else None)
     st.caption(belief_status(view, identifier))
     if not proposal:
         return
-    st.text(proposal["assessment_summary"])
+    if not get_config()["belief_comparison"]["enabled"]:
+        st.text(proposal["assessment_summary"])
     with st.expander("Belief justification and concerns"):
         for key, label in (("low_support", "Low support"), ("high_support", "High support"), ("unknown_basis", "Unknown basis")):
             st.markdown("**" + label + "**")
