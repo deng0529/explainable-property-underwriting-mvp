@@ -1,7 +1,7 @@
 """Read-only assembly of current saved upstream records. Never runs earlier stages."""
 import copy
 from underwriting.assessment.belief_service import current_input, content_hash
-from underwriting.assessment.er_service import current_confirmed, input_belief_hash
+from underwriting.assessment.er_service import current_confirmed, input_belief_hash, configured_calculation_inputs, calculation_input_hash
 from underwriting.assessment.brb_service import current_er_inputs, er_result_hash, rule_configuration_hash
 from underwriting.configuration.decision_model import get_model, effective_er_model_hash
 from underwriting.models.er import ENGINE_VERSION as ER_VERSION
@@ -11,7 +11,8 @@ from underwriting.intake.screening import resolve_screening, current_screening_r
 
 def assemble_snapshot(case, store):
     model = get_model()
-    digest, reviewed_hash, proposal_id, confirmed, confirmation_ids, evidence_id = current_confirmed(case, store, model)
+    inputs,provenance=configured_calculation_inputs(case,store,model)
+    digest, reviewed_hash, proposal_id, confirmed, confirmation_ids, evidence_id = inputs
     intake = current_screening_record(case,store,digest)
     if not intake or intake.get('status') not in {'completed', 'needs_review'} or not intake.get('result'):
         raise ValueError('Complete and save Submission extraction and screening for this source first.')
@@ -23,10 +24,12 @@ def assemble_snapshot(case, store):
         submission_field({'submission':{'extraction_and_screening':intake['result']}},identifier)
     screening = resolve_screening(intake,case)
     _, evidence, reviewed, current_hash, evidence_versions = current_input(case, store)
-    proposal = store.latest_beliefs(case, digest, reviewed_hash)
+    if provenance:
+        proposal=store.latest_comparison_direct(case,digest,reviewed_hash,provenance['comparison_cache_key'])
+    else:proposal = store.latest_beliefs(case, digest, reviewed_hash)
     if current_hash != reviewed_hash or evidence['run_id'] != evidence_id or not proposal or proposal['run_id'] != proposal_id:
         raise ValueError('Assessment records changed while loading. Load the decision review again.')
-    er = store.latest_er_compatible(case, digest, input_belief_hash(digest, reviewed_hash, proposal_id, confirmed), effective_er_model_hash(model), ER_VERSION)
+    er = store.latest_er_compatible(case, digest, calculation_input_hash(inputs,provenance), effective_er_model_hash(model), ER_VERSION)
     if not er:
         raise ValueError('Calculate and save current Fire/Security ER results first.')
     current_er_inputs(case, er, store, model)
@@ -47,10 +50,11 @@ def assemble_snapshot(case, store):
                 'submission': {'metadata': metadata(intake), 'extraction_and_screening': copy.deepcopy(intake['result']),
                                'outcome': screening['outcome'], 'screening_resolution': screening, 'validation_issues': intake.get('validation_issues', []), 'human_reviews': intake_reviews},
                 'evidence': {'metadata': metadata(evidence), 'ai_original': copy.deepcopy(evidence['result']), 'human_reviewed': reviewed, 'review_events': evidence_reviews},
-                'beliefs': {'metadata': metadata(proposal), 'ai_proposals': copy.deepcopy(proposal['result']), 'human_confirmed': confirmed, 'review_events': belief_reviews},
+                'beliefs': {'metadata': metadata(proposal), 'ai_proposals': copy.deepcopy(proposal['result']), 'human_confirmed': {} if provenance else confirmed, 'review_events': belief_reviews},
                 'er': copy.deepcopy(er), 'brb': copy.deepcopy(brb), 'upstream_record_references': references,
                 'completion': {'submission': intake['status'], 'screening': screening['outcome'], 'submission_review': intake_reviews[0]['status'] if intake_reviews else 'Not reviewed yet',
-                               'evidence': 'Human reviewed', 'beliefs': 'Human confirmed', 'er': 'Current saved result', 'brb': 'Current saved result'}}
+                               'evidence': 'Human reviewed', 'beliefs': 'Direct AI inputs — not human confirmed' if provenance else 'Human confirmed', 'er': 'Current saved result', 'brb': 'Current saved result'}}
+    if provenance:snapshot['beliefs'].update(input_method='direct_ai',calculation_inputs=copy.deepcopy(confirmed),input_provenance=copy.deepcopy(provenance))
     catalogue = {}
     def collect(value, path='snapshot'):
         if isinstance(value, dict):
@@ -63,7 +67,7 @@ def assemble_snapshot(case, store):
                 collect(child, path + f'[{index}]')
     collect(snapshot)
     snapshot['reference_catalogue'] = catalogue
-    if current_confirmed(case, store, model) != (digest, reviewed_hash, proposal_id, confirmed, confirmation_ids, evidence_id):
+    if configured_calculation_inputs(case,store,model) != (inputs,provenance):
         raise ValueError('Confirmed inputs changed while loading; load the decision review again.')
     current_er_inputs(case, er, store, model)
     return snapshot

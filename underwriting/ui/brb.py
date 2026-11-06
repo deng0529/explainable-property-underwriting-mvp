@@ -10,12 +10,13 @@ from underwriting.persistence.brb import BRBStore
 from underwriting.configuration.decision_model import get_model, effective_er_model_hash
 from underwriting.models.er import ENGINE_VERSION as ER_ENGINE_VERSION
 from underwriting.ui.intake import settings_for_ui, authorised
+from underwriting.configuration.access import local_comparison_settings
 from underwriting.persistence.intake import StoreError
 from underwriting.ui.brb_presentation import input_support_summary, strongest_rule_summary, activation_summary
 
 
 def brb_controls(case, prefix, er_view, button_slot):
-    model, settings = get_model(), settings_for_ui()
+    model, settings = get_model(), local_comparison_settings(settings_for_ui())
     er_run = er_view.get("run")
     digest = er_run["source_hash"] if er_run else "not_loaded"
     key = f"{prefix}:{case['submission_version']}:{digest}:brb"
@@ -73,6 +74,7 @@ def rule_rows(rules, input_ids, states):
 
 
 def brb_results(view):
+    if (view.get("run") or {}).get("input_method")=="direct_ai":st.caption("Input source: current Direct AI beliefs → Fire/Security ER → overall BRB. Not a human-confirmed assessment.")
     from underwriting.ui.diagnostics import render
     render(view,"BRB")
     if view.get("stale"):

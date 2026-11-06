@@ -34,7 +34,7 @@ def render_overview(case, prefix):
                     st.graphviz_chart(hierarchy_diagram(model, view), width='stretch',
                                       alt='Three-layer assessment pyramid: attributes feed ER groups, then overall BRB; arrows point upward.')
             with st.expander('How to read the hierarchy'):
-                st.caption('ER (evidential reasoning) combines confirmed attribute beliefs into Fire and Security distributions. Contribution weights show relative importance, not additive shares of the final result. BRB matches these distributions to rules and combines activated rule conclusions using the shared ER engine.')
+                st.caption('ER (evidential reasoning) combines the configured attribute belief inputs into Fire and Security distributions. Contribution weights show relative importance, not additive shares of the final result. BRB matches these distributions to rules and combines activated rule conclusions using the shared ER engine.')
                 st.caption('Lower-level Unknown is unassigned belief. The BRB interface maps it to an explicit insufficient-information state. Any material residual unassigned BRB output is shown separately. Edge labels are local ER weights; missing results use configured normalised weights. Stale values are withheld. Concern labels are descriptive, not insurance acceptance decisions.')
     if workflow.open:
         with workflow:

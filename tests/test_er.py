@@ -196,6 +196,7 @@ class ERIntegrationTests(unittest.TestCase):
             calculate_er(self.settings, self.case, store)
 
     def test_explicit_ui_calculation_and_model_staleness(self):
+        from underwriting.configuration.settings import get_config
         from underwriting.assessment.belief_service import confirm_belief
         from streamlit.testing.v1 import AppTest
         proposal = self.run_action()
@@ -208,7 +209,8 @@ case = {"case_id": "TEST-BELIEF", "submission_version": "1", "document_path": "u
 view = er_controls(case, "test-er", st.session_state["belief_view"], st.columns(1)[0])
 er_results(view)
 """
-        with patch("underwriting.ui.er.settings_for_ui", return_value=self.settings), \
+        with patch.dict(get_config()["belief_comparison"], {"enabled":False}), \
+             patch("underwriting.ui.er.settings_for_ui", return_value=self.settings), \
              patch("underwriting.ui.er.ERStore", return_value=store), \
              patch("underwriting.ui.er.document_hash", return_value="mock-source"), \
              patch("underwriting.intake.service.OpenAI", side_effect=AssertionError("ER must not call GPT")) as client:

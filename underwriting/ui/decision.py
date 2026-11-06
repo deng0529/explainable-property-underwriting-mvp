@@ -7,6 +7,7 @@ from underwriting.configuration.decision_model import effective_model_hash, get_
 from underwriting.assessment.belief_service import content_hash
 from underwriting.assessment.evidence_service import document_hash
 from underwriting.ui.intake import settings_for_ui, authorised
+from underwriting.configuration.access import local_comparison_settings
 from underwriting.persistence.decision import DecisionStore
 from underwriting.persistence.intake import StoreError
 from underwriting.decision.schema import ACTIONS, validate_screening_narrative
@@ -21,7 +22,7 @@ def session_signature(case, prefix):
         source=document_hash(case)
     except OSError:
         source='unavailable'
-    return content_hash({'source':source,'model':effective_model_hash(get_model())})
+    return content_hash({'source':source,'model':effective_model_hash(get_model()),'decision_prompt':get_config()['prompts']['decision_review'],'belief_source':get_config()['belief_comparison']['calculation_input_method']})
 
 
 def known_newer_inputs(snapshot, prefix):
@@ -36,10 +37,12 @@ def known_newer_inputs(snapshot, prefix):
         value=st.session_state[key]
         if not stage or not isinstance(value,dict):
             continue
-        cached=value.get('run') or value.get('saved')
+        direct_mode=snapshot.get('beliefs',{}).get('input_method')=='direct_ai'
+        cached=(value.get('comparison_direct') if stage=='beliefs' and direct_mode else value.get('run')) or value.get('saved')
         saved=snapshot[stage].get('metadata',snapshot[stage])
         if isinstance(cached,dict) and cached.get('run_id')!=saved.get('run_id') and cached.get('finished_at','')>saved.get('finished_at',''):
             return True
+        if stage=='beliefs' and direct_mode:continue
         if stage not in {'evidence','beliefs'}:
             continue
         events=snapshot[stage].get('review_events',[])
@@ -70,7 +73,7 @@ def references(snapshot, ids):
 
 
 def render_decision(case, prefix):
-    settings = settings_for_ui()
+    settings = local_comparison_settings(settings_for_ui())
     owner = authorised(settings)
     key = f"{prefix}:{case['submission_version']}:decision"
     view = st.session_state.setdefault(key, {'run': None, 'attempt': None, 'history': [], 'signature': None, 'stale': False, 'origin': None})
@@ -84,7 +87,7 @@ def render_decision(case, prefix):
         except StoreError as error:
             st.error(str(error))
     st.subheader('Decision review')
-    st.caption('Before any paid request, we check saved Submission screening and completed Assessment reviews, confirmed beliefs, ER and BRB results. Current saved results are reused; you do not need to reopen earlier tabs. Paused screening can be reviewed for clarification or referral.')
+    st.caption('Before any paid request, we check saved Submission screening and completed Assessment reviews, current configured belief inputs, ER and BRB results. Current saved results are reused; you do not need to reopen earlier tabs. Paused screening can be reviewed for clarification or referral.')
     def action(regenerate=False):
         if store is None:
             st.error('Missing configuration: ' + ', '.join(settings.missing(paid=False)) if settings.missing(paid=False) else 'Database connection unavailable.')
@@ -282,6 +285,7 @@ def render_review(case, key, settings, owner, store, view):
                 if screening.get('correction'):
                     st.caption('A historical aggregate was corrected through the shared resolver. Its original record is preserved; non-blocking validation concerns do not independently pause six Pass checks.')
             st.markdown('**Current saved assessment**')
+            if snapshot['beliefs'].get('input_method')=='direct_ai':st.caption('Direct AI beliefs → Fire/Security ER → overall BRB. These inputs are not human-confirmed beliefs.')
             for column,(state,value) in zip(st.columns(3),snapshot['brb']['result']['state_beliefs'].items()):
                 column.metric({'low':'Low concern','high':'High concern','unknown':'Unknown'}[state],f'{value:.2f}')
             residual=snapshot['brb']['result']['residual_unassigned']

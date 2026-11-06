@@ -235,6 +235,7 @@ class BeliefTests(unittest.TestCase):
             self.request.assert_called_once()
             self.assertTrue(all(field.value == "" and field.disabled for field in app.text_input))
             app.button(key=f"{prefix}:select:F1 Combustible storage").click().run()
+            next(field for field in app.text_area if field.label == "Reason for belief edits").set_value("Reviewed and confirmed by the underwriter").run()
             next(field for field in app.checkbox if field.label == "Confirm this attribute assessment").set_value(True).run()
             next(button for button in app.button if button.label == "Confirm beliefs").click().run()
             self.assertFalse(app.exception)

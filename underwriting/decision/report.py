@@ -173,6 +173,7 @@ def render_report(run, decision=None, *, historical=False, current_screening=Non
     if not pending:
         pdf.paragraph(short(review['review_summary'],80,500),10)
     pdf.heading('Assessment results')
+    if snapshot['beliefs'].get('input_method')=='direct_ai':pdf.paragraph('Input source: Direct AI beliefs, aggregated through Fire/Security ER and overall BRB. Not human-confirmed attribute beliefs.',10)
     rows=[]
     for key, result in snapshot['er']['groups'].items():
         description=describe_er_result(result,snapshot['er']['decision_model_snapshot'])

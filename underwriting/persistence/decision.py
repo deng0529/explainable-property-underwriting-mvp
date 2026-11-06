@@ -1,5 +1,6 @@
 """Decision-only tables; existing upstream tables stay authoritative and unchanged."""
 import json
+import re
 import base64
 import requests
 from underwriting.persistence.brb import BRBStore
@@ -34,6 +35,14 @@ class DecisionStore(BRBStore, SubmissionReviewStore):
     def transaction(self, statements):
         """One Hrana batch/connection, FK enforcement and rollback on any failed step."""
         require_owner(self.settings)
+        if self.settings.service_mode=='comparison_owner':
+            allowed=(r'^CREATE TABLE IF NOT EXISTS (?:decision_review_runs|underwriting_decisions|decision_reports|submission_intake_claims_v1) \(',
+                     r'^INSERT OR IGNORE INTO (?:decision_review_runs|decision_reports) VALUES \(',
+                     r'^INSERT INTO underwriting_decisions SELECT ',
+                     r"^UPDATE decision_review_runs SET .* WHERE review_run_id=\? AND status='running'\s*$")
+            for sql,_ in statements:
+                if ';' in sql or not any(re.match(pattern,sql,re.DOTALL|re.IGNORECASE) for pattern in allowed):
+                    raise PermissionError('Local Decision access permits versioned review/report saves and human decisions only.')
         if self.settings.service_mode == 'offline':
             from underwriting.persistence.local import transaction
             return transaction(self.settings, statements)

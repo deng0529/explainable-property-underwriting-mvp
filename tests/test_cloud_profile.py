@@ -59,6 +59,8 @@ class CloudSavedResultsTests(unittest.TestCase):
         self.fixture = decision_fixtures.DecisionTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
+        configured=patch("underwriting.assessment.er_service.get_config",return_value=get_config())
+        configured.start();self.addCleanup(configured.stop)
 
     def test_cloud_reuses_saved_review_and_pdf_without_key_gpt_or_writes(self):
         review, _ = self.fixture.generate()

@@ -129,6 +129,8 @@ def validate(data):
         if set(re.findall(r"{{(\w+)}}",template))!=placeholders:
             raise ConfigError("prompts."+name+".template: required placeholders are missing or unknown.")
     comparison = required(data,"belief_comparison",dict)
+    if text(comparison,"calculation_input_method","belief_comparison") not in {"direct_ai","human_confirmed"}:
+        raise ConfigError("belief_comparison.calculation_input_method: direct_ai or human_confirmed required.")
     required(comparison,"enabled",bool,"belief_comparison")
     required(comparison,"local_owner_enabled",bool,"belief_comparison")
     text(comparison,"input_version","belief_comparison")

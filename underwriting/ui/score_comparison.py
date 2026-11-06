@@ -28,8 +28,7 @@ def details(item):
             support=item[name+'_support'];st.markdown('**'+name.title()+' support**')
             st.text(support['explanation']);st.caption('Evidence IDs: '+(', '.join(support['evidence_ids']) or '—'))
         st.markdown('**Unknown support**')
-        if 'unknown_explanation' in item:st.text(item['unknown_explanation'])
-        elif item['unresolved_information']:st.caption('Unassigned belief reflects the unresolved information below; these are gaps, not evidence of an absent protection.')
+        if item['unresolved_information']:st.caption('Unassigned belief reflects the unresolved information below; these are gaps, not evidence of an absent protection.')
         elif not item['evidence_review_flags']:st.caption('No unresolved support was returned for Unknown.')
         for issue in item['unresolved_information']:
             st.text(issue['issue']+' · '+issue['materiality']+' · '+issue['potential_assessment_impact'])
@@ -51,21 +50,30 @@ def status(view,run,method):
     if run and run['status'] not in {'completed','stale'}:
         for issue in run.get('validation_errors',[]):st.text(issue)
 
+def support_payload(item):
+    return {key:item[key] for key in ('low_support','high_support','unresolved_information','evidence_review_flags')}
+
 def render_comparison(view,identifier,proposal=None):
     a=result_for(view,'direct',identifier);b=result_for(view,'score',identifier)
-    left,right=st.columns(2)
-    with left:
+    shared=bool(a and b and support_payload(a)==support_payload(b))
+    direct_tab,score_tab=st.tabs(['Direct AI beliefs','Score + Unknown'])
+    with direct_tab:
         st.markdown('**Direct AI beliefs**');distribution(a)
         status(view,view.get('comparison_direct'),'direct')
-        if a:st.text(a['allocation_explanation']);details(a)
-    with right:
+        if a:
+            st.text(a['allocation_explanation'])
+            if not shared:details(a)
+    with score_tab:
         st.markdown('**Score + Unknown**')
         if b:
             minimum,maximum=view['score_run']['method_settings']['score_scale']['minimum'],view['score_run']['method_settings']['score_scale']['maximum']
             st.text(f"Concern score: {b['concern_score']:g} / {maximum:g}" if b['assessable'] else 'Not assessable')
             st.text(f"Unknown judgement: {b['unknown']*100:.1f}%")
         distribution(b['beliefs'] if b else None);status(view,view.get('score_run'),'score')
-        if b:st.text(b['score_explanation']);st.text(b['unknown_explanation']);details(b)
+        if b:
+            st.text(b['score_explanation']);st.text(b['unknown_explanation'])
+            if not shared:details(b)
+    if shared:details(a)
     if a and b:
         st.caption('Method B − Method A (percentage points): '+', '.join(f"{key.title()} {(b['beliefs'][key]-a[key])*100:+.1f}" for key in ('low','high','unknown')))
-    st.caption('Experimental display-only comparison. Both methods use the same full-document/reviewed-evidence snapshot. Review flags do not add confirmed evidence. Existing human confirmations and ER/BRB inputs are unchanged.')
+    st.caption('Both methods use the same full-document/reviewed-evidence snapshot. Explicit ER/BRB calculations use Direct AI beliefs; Score + Unknown remains comparison-only. Human confirmations remain separate.')

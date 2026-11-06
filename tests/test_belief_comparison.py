@@ -225,10 +225,12 @@ class ComparisonTests(unittest.TestCase):
             response_mock=Mock();response_mock.json.return_value={'results':[{'type':'ok','response':{'result':{'rows':[],'affected_row_count':1}}}]};post.return_value=response_mock
             store=BeliefStore(owner);store.initialise_comparison_direct();store.initialise_scores()
             self.assertEqual(post.call_count,4)
-            for sql in ('DELETE FROM attribute_direct_comparison_runs_v2','INSERT INTO er_aggregation_runs_v1 VALUES (1)','UPDATE attribute_concern_score_runs_v2 SET status=1'):
+            store.execute('INSERT INTO attribute_belief_reviews_v1 VALUES (?,?,?,?,?)',['event','run','F1','timestamp','{}'])
+            self.assertEqual(post.call_count,5)
+            for sql in ('DELETE FROM attribute_direct_comparison_runs_v2','INSERT INTO decision_review_runs_v1 VALUES (1)','UPDATE attribute_concern_score_runs_v2 SET status=1'):
                 with self.assertRaises(PermissionError):store.execute(sql)
             with patch('underwriting.intake.service.OpenAI',side_effect=AssertionError('No GPT')):
-                with self.assertRaises(PermissionError):structured_request(owner,'','',{},'decision_review')
+                with self.assertRaises(PermissionError):structured_request(owner,'','',{},'submission_intake')
             with patch.dict(os.environ,{'UNDERWRITING_PROFILE':'public_readonly'}):
                 with self.assertRaises(PermissionError):require_owner(owner)
 
@@ -272,6 +274,74 @@ class ComparisonTests(unittest.TestCase):
         snapshot=copy.deepcopy(self.snapshot);snapshot['source']['page_labelled_text']+=' {{configured_concern_scale}}'
         prompt,_=service.comparison_prompt(self.case,snapshot,'score');self.assertIn('{{configured_concern_scale}}',prompt)
 
+    def test_ui_explicit_direct_er_then_brb_calculation_without_gpt(self):
+        from streamlit.testing.v1 import AppTest
+        from test_brb import LocalBRBStore
+        pair=self.run_pair();store=LocalBRBStore(self.store)
+        view={'run':None,'reviews':[],'comparison_direct':pair['direct'],'settings':self.settings,
+              'comparison_snapshot_hash':pair['snapshot_hash'],'comparison_reviewed_snapshot_hash':self.snapshot['upstream']['reviewed_snapshot_hash']}
+        script="import streamlit as st\nfrom underwriting.ui.er import er_controls,er_results\nfrom underwriting.ui.brb import brb_controls,brb_results\nslots=st.columns(2)\ner=er_controls(st.session_state['case'],'direct-ui',st.session_state['beliefs'],slots[0])\nbrb=brb_controls(st.session_state['case'],'direct-ui',er,slots[1])\ner_results(er)\nbrb_results(brb)"
+        with patch('underwriting.ui.er.settings_for_ui',return_value=self.settings),patch('underwriting.ui.brb.settings_for_ui',return_value=self.settings),patch('underwriting.ui.er.ERStore',return_value=store),patch('underwriting.ui.brb.BRBStore',return_value=store),patch('underwriting.ui.er.document_hash',return_value='mock-source'),patch('underwriting.intake.service.OpenAI',side_effect=AssertionError('No GPT')):
+            app=AppTest.from_string(script,default_timeout=30);app.session_state['case']=self.case;app.session_state['beliefs']=view;app.run()
+            self.assertFalse(app.exception)
+            app.button(key='direct-ui:Calculate assessment').click().run();self.assertFalse(app.exception)
+            self.assertEqual(app.session_state['direct-ui:assessment_stage'],'ER results')
+            app.button(key='direct-ui:calculate_brb').click().run();self.assertFalse(app.exception)
+            self.assertEqual(app.session_state['direct-ui:assessment_stage'],'BRB results')
+            self.assertTrue(any('Direct AI attribute inputs' in c.value for c in app.caption))
+        self.a.assert_called_once();self.b.assert_called_once()
+
+    def test_direct_ai_er_brb_saved_first_and_prompt_change_blocks_stale_inputs(self):
+        from test_brb import LocalBRBStore
+        from underwriting.assessment.er_service import calculate_er
+        from underwriting.assessment.brb_service import calculate_brb
+        self.f.run_action()  # An older, different proposal must not supply the new calculation.
+        pair=self.run_pair();store=LocalBRBStore(self.store)
+        with patch('underwriting.intake.service.OpenAI',side_effect=AssertionError('No GPT')):
+            er=calculate_er(self.settings,self.case,store,input_method='direct_ai')
+            self.assertEqual(er['input_method'],'direct_ai')
+            self.assertEqual(er['belief_run_id'],pair['direct']['run_id'])
+            for values in er['confirmed_beliefs'].values():
+                self.assertEqual(values,{'low':.2,'high':.6,'unknown':.2})
+            brb,reused=calculate_brb(self.settings,self.case,er,store);self.assertFalse(reused)
+            self.assertEqual(brb['belief_input_provenance']['belief_run_id'],pair['direct']['run_id'])
+            with patch('underwriting.assessment.er_service.aggregate_configured_group',side_effect=AssertionError('Reuse ER')),patch('underwriting.assessment.brb_service.infer_brb',side_effect=AssertionError('Reuse BRB')):
+                again=calculate_er(self.settings,self.case,store,input_method='direct_ai')
+                loaded,reused=calculate_brb(self.settings,self.case,again,store)
+                self.assertEqual(again['run_id'],er['run_id']);self.assertEqual(loaded['run_id'],brb['run_id']);self.assertTrue(reused)
+            cfg=get_config();original=cfg['prompts']['attribute_direct_comparison']['version']
+            cfg['prompts']['attribute_direct_comparison']['version']='test-prompt-change'
+            try:
+                with self.assertRaisesRegex(ValueError,'no current saved Direct AI'):
+                    calculate_er(self.settings,self.case,store,input_method='direct_ai')
+                with self.assertRaises(ValueError):calculate_brb(self.settings,self.case,er,store)
+            finally:cfg['prompts']['attribute_direct_comparison']['version']=original
+        self.a.assert_called_once();self.b.assert_called_once()
+
+    def test_tabs_differing_support_attribute_navigation_and_human_edits(self):
+        from streamlit.testing.v1 import AppTest
+        canonical=self.f.run_action()
+        self.b_data['assessments'][0]['low_support']['explanation']='Different score-method explanation'
+        result=self.run_pair()
+        view={'run':canonical,'comparison_direct':result['direct'],'score_run':result['score'],'reviews':[],'stale':False,
+              'settings':self.settings,'store':self.store,'case':self.case,
+              'comparison_snapshot_hash':result['snapshot_hash'],'comparison_reviewed_snapshot_hash':self.snapshot['upstream']['reviewed_snapshot_hash']}
+        script="import streamlit as st\nfrom underwriting.ui.beliefs import belief_details\nidentifier=st.selectbox('Attribute',['F1','F2','F3','S1','S2'])\nbelief_details(st.session_state['view'],identifier)"
+        app=AppTest.from_string(script);app.session_state['view']=view;app.run()
+        self.assertFalse(app.exception)
+        self.assertEqual(len([e for e in app.expander if e.label=='Evidence support and unresolved information']),2)
+        for identifier in ('F2','F3','S1','S2','F1'):
+            app.selectbox[0].select(identifier).run();self.assertFalse(app.exception)
+        self.a.assert_called_once();self.b.assert_called_once()
+        low=next(n for n in app.number_input if n.label=='Human Low');self.assertFalse(low.disabled)
+        low.set_value(.3).run()
+        next(n for n in app.text_area if n.label=='Reason for belief edits').set_value('Reviewed independently by underwriter').run()
+        next(n for n in app.checkbox if n.label=='Confirm this attribute assessment').set_value(True).run()
+        next(n for n in app.button if n.label=='Confirm beliefs').click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(self.store.belief_reviews(canonical['run_id'])[-1]['values'],{'low':.3,'high':.4,'unknown':.3})
+        self.run_pair();self.a.assert_called_once();self.b.assert_called_once()
+
     def test_ui_compares_new_methods_and_keeps_confirmation_canonical(self):
         from streamlit.testing.v1 import AppTest
         canonical=self.f.run_action();result=self.run_pair()
@@ -283,6 +353,9 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertIn('**Score + Unknown**',[m.value for m in app.markdown])
         self.assertIn('52.5%',[m.value for m in app.metric]);self.assertIn('17.5%',[m.value for m in app.metric])
+        self.assertEqual([tab.label for tab in app.tabs],['Direct AI beliefs','Score + Unknown'])
+        self.assertNotIn('**Existing proposal for human review**',[m.value for m in app.markdown])
+        self.assertEqual(len([e for e in app.expander if e.label=='Evidence support and unresolved information']),1)
         for heading in ('**Low support**','**High support**','**Unknown support**'):
             self.assertIn(heading,[m.value for m in app.markdown])
         self.assertTrue(next(b for b in app.button if b.label=='Confirm beliefs').disabled)

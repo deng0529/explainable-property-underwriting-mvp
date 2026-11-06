@@ -58,6 +58,8 @@ def review_data():
 
 class DecisionTests(unittest.TestCase):
     def setUp(self):
+        source_patch=patch.dict(get_config()["belief_comparison"],{"calculation_input_method":"human_confirmed"})
+        source_patch.start();self.addCleanup(source_patch.stop)
         self.fixture = brb_tests.BRBIntegrationTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.tearDown)
@@ -107,8 +109,10 @@ class DecisionTests(unittest.TestCase):
         self.assertIn('no GPT call',origin)
         changed=copy.deepcopy(get_config());changed['prompts']['decision_review']['version']='future-version'
         with patch('underwriting.decision.service.get_config',return_value=changed):
-            self.assertEqual(self.generate()[0]['review_run_id'],run['review_run_id'])
-        self.request.assert_called_once()
+            updated=self.generate()[0]
+            self.assertNotEqual(updated['review_run_id'],run['review_run_id'])
+            self.assertEqual(self.generate()[0]['review_run_id'],updated['review_run_id'])
+        self.assertEqual(self.request.call_count,2)
         self.assertEqual(self.store.review_by_id(run['review_run_id']),run)
 
     def test_human_saves_are_immutable_and_do_not_regenerate(self):

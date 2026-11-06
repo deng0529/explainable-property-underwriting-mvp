@@ -4,7 +4,7 @@ Uses the same current evidence/confirmation/ER compatibility checks as Decision,
 but permits a partially completed workflow. Never invokes stage services.
 """
 from underwriting.assessment.belief_service import current_input
-from underwriting.assessment.er_service import current_confirmed, input_belief_hash
+from underwriting.assessment.er_service import current_confirmed, input_belief_hash, configured_calculation_inputs, calculation_input_hash
 from underwriting.assessment.brb_service import current_er_inputs, er_result_hash, rule_configuration_hash
 from underwriting.assessment.evidence_service import document_hash
 from underwriting.configuration.decision_model import effective_er_model_hash
@@ -21,6 +21,9 @@ def empty_overview(model, state=None):
 
 
 def load_overview(case, store, model):
+    from underwriting.configuration.settings import get_config
+    if get_config()['belief_comparison']['enabled'] and get_config()['belief_comparison']['calculation_input_method']=='direct_ai':
+        return load_direct_overview(case,store,model)
     view = empty_overview(model)
     digest = document_hash(case)
     proposal = None
@@ -87,4 +90,28 @@ def load_overview(case, store, model):
             for row in view['groups'].values():
                 row.update(state='Stale', result=None)
             view['overall'].update(state='Stale', result=None)
+    return view
+
+
+def load_direct_overview(case,store,model):
+    """Show only the current saved Direct AI chain; no generation or calculation."""
+    view=empty_overview(model)
+    try:inputs,provenance=configured_calculation_inputs(case,store,model)
+    except ValueError:
+        return empty_overview(model,'Not current — load proposed beliefs')
+    digest,reviewed,proposal,values,_,_=inputs
+    for identifier,row in view['attributes'].items():
+        if identifier in values:row.update(state='Direct AI input — not human confirmed',values=values[identifier])
+    er=store.latest_er_compatible(case,digest,calculation_input_hash(inputs,provenance),effective_er_model_hash(model),ER_VERSION)
+    if er:
+        current_er_inputs(case,er,store,model)
+        for identifier,row in view['groups'].items():
+            if identifier in er['groups']:row.update(state='Current saved result',result=er['groups'][identifier])
+        brb=store.latest_brb(case,digest,er['run_id'],er_result_hash(er),rule_configuration_hash(model),BRB_VERSION)
+        if brb and brb['status']=='completed':view['overall'].update(state='Current saved result',result=brb['result'])
+    elif store.latest_overview_stage(case,'er'):
+        for row in view['groups'].values():row['state']='Stale'
+    if not view['overall']['result'] and store.latest_overview_stage(case,'brb'):view['overall']['state']='Stale'
+    if configured_calculation_inputs(case,store,model)!=(inputs,provenance):return empty_overview(model,'Stale')
+    if er:current_er_inputs(case,er,store,model)
     return view

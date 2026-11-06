@@ -47,7 +47,7 @@ def review_content(snapshot):
         material_submission_review['screening_notes']=notes
     evidence=snapshot['evidence'];beliefs=snapshot['beliefs']
     er=snapshot['er'];brb=snapshot['brb']
-    return {'identity':{'case_id':snapshot['company']['case_id'],'submission_version':snapshot['source']['submission_version'],
+    result={'identity':{'case_id':snapshot['company']['case_id'],'submission_version':snapshot['source']['submission_version'],
                         'company_name':snapshot['company'].get('company_name'),'document_hash':snapshot['source']['sha256']},
             'submission':{'data':submission['extraction_and_screening'],'resolved_screening':submission['outcome'],
                           'validation_concerns':sorted(submission.get('validation_issues',[])),
@@ -59,6 +59,11 @@ def review_content(snapshot):
             'er':{'groups':{identifier:{key:value for key,value in group.items() if key!='diagnostics'} for identifier,group in er['groups'].items()},
                   'engine':er['engine_version'],'model':er['decision_model_snapshot']},
             'brb':{'result':brb['result'],'engine':brb['engine_version'],'model':brb['decision_model_snapshot']}}
+
+    if beliefs.get('input_method')=='direct_ai':
+        result['beliefs'].update(input_method='direct_ai',calculation_inputs=beliefs['calculation_inputs'],
+            input_provenance={k:v for k,v in beliefs['input_provenance'].items() if k!='belief_run_id'})
+    return result
 
 
 def review_content_hash(snapshot):

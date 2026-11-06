@@ -63,10 +63,11 @@ class TursoStore:
         if self.settings.service_mode=='comparison_owner':
             require_owner(self.settings)
             allowed=(r'^\s*SELECT\s',
-                     r'^CREATE TABLE IF NOT EXISTS (?:attribute_belief_runs_v1|attribute_belief_reviews_v1|attribute_concern_score_runs_v2|attribute_direct_comparison_runs_v2|submission_intake_claims_v1) \(',
-                     r'^INSERT OR IGNORE INTO (?:attribute_belief_runs_v1|attribute_concern_score_runs_v2|attribute_direct_comparison_runs_v2|submission_intake_claims_v1) (?:VALUES|\()')
+                     r'^CREATE TABLE IF NOT EXISTS (?:attribute_belief_runs_v1|attribute_belief_reviews_v1|attribute_concern_score_runs_v2|attribute_direct_comparison_runs_v2|submission_intake_claims_v1|er_aggregation_runs_v1|brb_assessment_runs_v1) \(',
+                     r'^INSERT OR IGNORE INTO (?:attribute_belief_runs_v1|attribute_concern_score_runs_v2|attribute_direct_comparison_runs_v2|submission_intake_claims_v1) (?:VALUES|\()',
+                     r'^INSERT INTO (?:attribute_belief_reviews_v1|er_aggregation_runs_v1|brb_assessment_runs_v1) VALUES \(')
             if ';' in sql or not any(re.match(pattern,sql,re.IGNORECASE) for pattern in allowed):
-                raise PermissionError('Comparison owner access permits proposal storage only; other workflow writes are blocked.')
+                raise PermissionError('Local comparison access permits proposal storage and append-only human belief reviews and ER/BRB results only; other workflow writes are blocked.')
         if self.settings.service_mode=='turso_readonly':
             if not re.match(r'^\s*SELECT\s',sql,re.IGNORECASE) or ';' in sql:
                 raise PermissionError('Read-only Turso access permits one SELECT query only. No database write was made.')

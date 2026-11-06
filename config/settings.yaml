@@ -828,6 +828,7 @@ reliability:
 
 # Temporary display-only experiment. Cloud remains read-only.
 belief_comparison:
+  calculation_input_method: direct_ai
   enabled: true
   local_owner_enabled: true
   input_version: full-reviewed-document-v2

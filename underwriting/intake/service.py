@@ -79,7 +79,7 @@ def request_once(settings, system, user):
 
 
 def structured_request(settings, system, user, schema, name):
-    if settings.service_mode=="comparison_owner" and name not in {"attribute_beliefs","attribute_direct_comparison","attribute_concern_scores"}:
+    if settings.service_mode=="comparison_owner" and name not in {"attribute_beliefs","attribute_direct_comparison","attribute_concern_scores","decision_review"}:
         raise PermissionError("Comparison owner access permits only the two proposed-belief requests.")
     from underwriting.reliability.inputs import generation_allowed, check_request
     generation_allowed(settings)

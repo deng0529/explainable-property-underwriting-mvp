@@ -244,16 +244,13 @@ def belief_details(view, identifier):
         render_comparison(view,identifier,proposal)
     else:
         display_distribution("AI-proposed beliefs", proposal)
-    if get_config()["belief_comparison"]["enabled"]:
-        st.caption("Your existing proposal and human confirmations below are used for ER/BRB. The comparison above does not change them.")
-        display_distribution("Existing proposal for human review",proposal)
     display_distribution("Human-confirmed beliefs", event["values"] if event else None)
     st.caption(belief_status(view, identifier))
     if not proposal:
         return
     if not get_config()["belief_comparison"]["enabled"]:
         st.text(proposal["assessment_summary"])
-    with st.expander("Belief justification and concerns"):
+    with st.expander("Previous proposal justification and concerns"):
         for key, label in (("low_support", "Low support"), ("high_support", "High support"), ("unknown_basis", "Unknown basis")):
             st.markdown("**" + label + "**")
             st.text(proposal[key]["explanation"])
@@ -266,12 +263,17 @@ def belief_details(view, identifier):
             st.text(value)
         if proposal["protection_aspect_findings"]:
             st.dataframe(proposal["protection_aspect_findings"], hide_index=True, alt="F3 compartmentation, detection and suppression findings without subattribute scores")
-    owner = authorised(view["settings"])
+    review_settings = local_comparison_settings(view["settings"])
+    owner = authorised(review_settings)
     run = view["run"]
     key = f"{run['run_id']}:{identifier}:human_belief"
-    mode = st.radio("Human assessment", ["Accept AI proposal", "Edit Low and High"], disabled=not owner, key=key + ":mode", persist_state="session")
-    low, high = proposal["low"], proposal["high"]
-    reason = ""
+    comparison = get_config()["belief_comparison"]["enabled"]
+    modes = (["Keep current confirmed beliefs", "Edit Low and High"] if event else ["Edit Low and High"]) if comparison else ["Accept AI proposal", "Edit Low and High"]
+    if st.session_state.get(key + ":mode") not in modes:st.session_state.pop(key + ":mode",None)
+    mode = st.radio("Human assessment", modes, index=len(modes)-1 if comparison else 0, disabled=not owner, key=key + ":mode", persist_state="session")
+    baseline = event["values"] if event else proposal
+    low, high = baseline["low"], baseline["high"]
+    reason = "Reconfirmed existing human-confirmed beliefs." if mode == "Keep current confirmed beliefs" else ""
     if mode == "Edit Low and High":
         step = get_config()["belief_assessment"]["increment"]
         low_col, high_col = st.columns(2)
@@ -282,7 +284,8 @@ def belief_details(view, identifier):
     confirmed = st.checkbox("Confirm this attribute assessment", disabled=not owner, key=key + ":confirm", persist_state="session")
     if st.button("Confirm beliefs", disabled=not owner or not confirmed, key=key + ":save"):
         try:
-            saved = confirm_belief(view["settings"], view["case"], view["store"], run, identifier,
+            review_store = BeliefStore(review_settings) if review_settings is not view["settings"] else view["store"]
+            saved = confirm_belief(review_settings, view["case"], review_store, run, identifier,
                                   "accept" if mode == "Accept AI proposal" else "edit", low, high, reason)
             view["reviews"].append(saved)
             st.rerun()

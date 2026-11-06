@@ -7,7 +7,7 @@ from underwriting.models.brb import infer_brb, ENGINE_VERSION
 from underwriting.models.brb_adapter import prepare_brb_inputs
 from underwriting.configuration.decision_model import get_model, validate_model, effective_model_hash, effective_er_model_hash
 from underwriting.models.er import ENGINE_VERSION as ER_ENGINE_VERSION
-from underwriting.assessment.er_service import current_confirmed, input_belief_hash, compatible_input_hashes
+from underwriting.assessment.er_service import current_confirmed, input_belief_hash, compatible_input_hashes, current_direct_inputs, calculation_input_hash
 from underwriting.configuration.access import require_owner
 from underwriting.intake.service import now
 
@@ -21,16 +21,19 @@ def er_result_hash(run):
     return content_hash({name: run[name] for name in ("run_id", "source_hash", "source_version", "engine_version", "input_belief_hash", "groups")})
 
 
-def current_er_inputs(case, er_run, store, model):
+def current_er_inputs(case, er_run, store, model, settings=None):
     validate_model(model)
     if not er_run or er_run.get("status") != "completed":
         raise ValueError("Calculate current Fire and Security ER results first.")
-    digest, reviewed, proposal, values, _, _ = current_confirmed(case, store, model)
+    if er_run.get('input_method')=='direct_ai':
+        inputs,provenance=current_direct_inputs(settings or store.settings,case,store,model)
+    else:inputs,provenance=current_confirmed(case,store,model),None
+    digest, reviewed, proposal, values, _, _ = inputs
     if (er_run["case_id"], er_run["source_version"], er_run["source_hash"]) != (case["case_id"], case["submission_version"], digest):
         raise ValueError("ER results belong to another company, source or submission version.")
     if er_run["engine_version"] != ER_ENGINE_VERSION or effective_er_model_hash(er_run["decision_model_snapshot"]) != effective_er_model_hash(model):
         raise ValueError("ER configuration or engine changed. Calculate Fire / Security ER again.")
-    if input_belief_hash(digest, reviewed, proposal, values) not in compatible_input_hashes(er_run):
+    if calculation_input_hash(inputs,provenance) not in compatible_input_hashes(er_run):
         raise ValueError("Confirmed attribute beliefs changed. Calculate Fire / Security ER again.")
     latest = store.latest_er_compatible(case, digest, er_run["input_belief_hash"], effective_er_model_hash(model), ER_ENGINE_VERSION)
     if not latest or latest["run_id"] != er_run["run_id"]:
@@ -42,7 +45,7 @@ def calculate_brb(settings, case, er_run, store, model_config=None):
     model = model_config if model_config is not None else get_model()
     if not model["brb"]["enabled"] or not model["brb"]["configured"]:
         raise ValueError("BRB is not enabled/configured.")
-    inputs = current_er_inputs(case, er_run, store, model)
+    inputs = current_er_inputs(case, er_run, store, model, settings)
     er_hash, rule_hash = er_result_hash(er_run), rule_configuration_hash(model)
     saved = store.latest_brb(case, er_run["source_hash"], er_run["run_id"], er_hash, rule_hash, ENGINE_VERSION)
     if saved:
@@ -55,7 +58,7 @@ def calculate_brb(settings, case, er_run, store, model_config=None):
     assessment_entry(case,store,er_run["source_hash"])
     result = infer_brb(inputs, model["brb"], distribution_tolerance=model["tolerances"]["distribution_sum"],
                        er_tolerance=model["tolerances"]["er_floating_cleanup"])
-    if current_er_inputs(case, er_run, store, model) != inputs:
+    if current_er_inputs(case, er_run, store, model, settings) != inputs:
         raise ValueError("ER inputs changed during BRB calculation; no result was saved.")
     run = {"run_id": uuid.uuid4().hex, "case_id": case["case_id"], "source_version": case["submission_version"],
            "source_hash": er_run["source_hash"], "er_run_id": er_run["run_id"], "er_result_hash": er_hash,
@@ -67,6 +70,7 @@ def calculate_brb(settings, case, er_run, store, model_config=None):
            "decision_model": {"version": model["model_version"], "sha256": effective_model_hash(model)},
            "decision_model_snapshot": copy.deepcopy(model), "engine_version": ENGINE_VERSION,
            "finished_at": now(), "status": result["status"], "result": result}
+    if er_run.get("input_method")=="direct_ai":run.update(input_method="direct_ai",belief_input_provenance=copy.deepcopy(er_run["belief_input_provenance"]))
     store.initialise_brb()
     from underwriting.reliability.diagnostics import attach
     attach(run,"BRB",source="numerical_calculation")

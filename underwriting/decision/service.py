@@ -90,6 +90,14 @@ def retry_save(settings, store, run):
     return run
 
 
+def review_matches_settings(run,settings):
+    definition=get_config()['prompts']['decision_review']
+    prompt_hash=content_hash({'system':definition['system'],'template':definition['template']})
+    return (run['prompt']['version']==definition['version'] and run['prompt']['sha256']==prompt_hash
+            and run.get('requested_model',run['model_identifier'])==settings.model
+            and run['generation_settings']==dict(settings.generation))
+
+
 def resolve_current_review(case, store, snapshot):
     digest=snapshot_hash(snapshot)
     exact=store.reviews_for_snapshot(case,digest)
@@ -105,7 +113,7 @@ def resolve_current_review(case, store, snapshot):
             try:
                 validate_saved(run,case)
                 validate_screening_narrative(run['review'],snapshot['submission']['outcome'])
-                if same_review_content(run['input_snapshot'],snapshot):
+                if same_review_content(run['input_snapshot'],snapshot) and review_matches_settings(run,store.settings):
                     return run
             except ValueError:
                 continue
@@ -114,7 +122,7 @@ def resolve_current_review(case, store, snapshot):
 
 def latest_content_attempt(case,store,snapshot):
     for run in store.review_runs_for_submission(case,successful=False):
-        if snapshot_hash(run['input_snapshot'])==run['input_snapshot_hash'] and same_review_content(run['input_snapshot'],snapshot):
+        if snapshot_hash(run['input_snapshot'])==run['input_snapshot_hash'] and same_review_content(run['input_snapshot'],snapshot) and review_matches_settings(run,store.settings):
             return run
     return None
 
@@ -124,7 +132,7 @@ def load_generate(settings, case, store, *, regenerate=False, confirmed=False, e
     report = progress or (lambda stage, message: None)
     report('Prerequisites', 'Checking saved Submission screening before any GPT request or write.')
     check_submission_ready(case, store)
-    report('Prerequisites', 'Checking reviewed evidence, human-confirmed beliefs and current saved Fire/Security ER and BRB results.')
+    report('Prerequisites', 'Checking reviewed evidence, configured belief inputs and current saved Fire/Security ER and BRB results.')
     try:
         snapshot = assemble_snapshot(case, store)
     except ValueError as error:
@@ -137,7 +145,8 @@ def load_generate(settings, case, store, *, regenerate=False, confirmed=False, e
     report('Database', 'Checking for a matching saved decision review before considering GPT.')
     digest = snapshot_hash(snapshot)
     content_digest=review_content_hash(snapshot)
-    scope = (case['case_id'], case['submission_version'], content_digest)
+    request_version=content_hash({'prompt':get_config()['prompts']['decision_review'],'model':settings.model,'generation':dict(settings.generation)})
+    scope = (case['case_id'], case['submission_version'], content_digest, request_version)
     with _guard:
         lock = _locks.setdefault(scope, threading.Lock())
     if not lock.acquire(blocking=False):
@@ -187,7 +196,7 @@ def load_generate(settings, case, store, *, regenerate=False, confirmed=False, e
             raise ValueError('This decision request is already reserved. No duplicate GPT call was made.')
         run = {'review_run_id': identifier, 'company_id': case['case_id'], 'submission_id': case['submission_version'],
                'status': 'running', 'input_snapshot': snapshot, 'input_snapshot_hash': digest,
-               'review_content_hash':content_digest,'content_identity_version':CONTENT_VERSION,
+               'review_content_hash':content_digest,'content_identity_version':CONTENT_VERSION,'requested_model':settings.model,
                'upstream_record_references': snapshot['upstream_record_references'], 'prompt': prompt_metadata,
                'model_identifier': settings.model, 'generation_settings': dict(settings.generation),
                'configuration': configuration_metadata(), 'schema_version': 'decision-review-v1.4', 'schema_hash': content_hash(output_schema), 'review': None, 'raw_response': None, 'response_text': None,
@@ -240,6 +249,7 @@ def current_saved_review(case, store, identifier):
         raise ValueError('Load a successful saved review for this company and submission first.')
     if not same_review_content(assemble_snapshot(case,store),run['input_snapshot']):
         raise ValueError('Decision review is stale. Load / Generate decision review for the current saved inputs.')
+    if not review_matches_settings(run,store.settings):raise ValueError('Decision review prompt/model settings changed. Load / Generate the current review first.')
     validate_saved(run, case)
     return run
 
