@@ -56,6 +56,16 @@ class CurrentDecisionTests(unittest.TestCase):
         self.assertIn('no GPT',origin);self.f.request.assert_called_once()
         self.a.assert_called_once();self.b.assert_called_once()
 
+    def test_current_direct_human_confirmation_is_separate_from_ai_calculation(self):
+        from underwriting.assessment.belief_service import confirm_belief
+        pair,er,brb=self.prepare()
+        run=dict(pair['direct'],assessment_settings=dict(get_config()['belief_assessment']))
+        event=confirm_belief(self.settings,self.case,self.store,run,'F1','edit',.3,.4,'Independent underwriter judgement')
+        snapshot=assemble_snapshot(self.case,self.store)
+        self.assertEqual(snapshot['beliefs']['human_confirmed']['F1'],event['values'])
+        self.assertEqual(snapshot['beliefs']['calculation_inputs']['F1'],{'low':.2,'high':.6,'unknown':.2})
+        self.assertEqual(snapshot['er']['run_id'],er['run_id'])
+
     def test_missing_current_direct_blocks_before_decision_gpt(self):
         with self.assertRaisesRegex(ValueError,'Direct AI'):self.f.generate()
         self.f.request.assert_not_called()

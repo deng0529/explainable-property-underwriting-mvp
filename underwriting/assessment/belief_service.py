@@ -235,6 +235,13 @@ def confirm_belief(settings, case, store, run, attribute_id, mode, low=None, hig
     digest, _, _, reviewed_hash, _ = current_input(case, store)
     if digest != run["source_hash"] or reviewed_hash != run["reviewed_hash"]:
         raise ValueError("Reviewed evidence changed. These beliefs and confirmations are stale; deliberately reassess first.")
+    if run.get('comparison_method')=='direct':
+        from underwriting.assessment.comparison_context import freeze_context
+        from underwriting.assessment.score_service import saved_method
+        snapshot=freeze_context(settings,case,store)
+        current,_=saved_method(settings,case,store,snapshot,'direct')
+        if not current or current['run_id']!=run['run_id']:
+            raise ValueError('Direct AI proposal changed; reload current beliefs before confirming.')
     proposal = next((item for item in run["result"]["assessments"] if item["attribute_id"] == attribute_id), None)
     if not proposal:
         raise ValueError("Unknown attribute ID.")
@@ -255,5 +262,6 @@ def confirm_belief(settings, case, store, run, attribute_id, mode, low=None, hig
              "case_id": case["case_id"], "source_hash": digest, "reviewed_hash": reviewed_hash,
              "mode": mode, "values": values, "reason": reason, "confirmed": True, "created_at": now(),
              "reviewer": "local_owner", "assessment_settings": copy.deepcopy(get_config()["belief_assessment"])}
+    if run.get('comparison_method')=='direct':event.update(proposal_method='direct_ai',proposal_prompt=copy.deepcopy(run['prompt']),proposal_input_hash=run['input_hash'])
     store.save_belief_review(event)
     return event

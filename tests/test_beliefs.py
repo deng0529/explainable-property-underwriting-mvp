@@ -239,8 +239,8 @@ class BeliefTests(unittest.TestCase):
             next(field for field in app.checkbox if field.label == "Confirm this attribute assessment").set_value(True).run()
             next(button for button in app.button if button.label == "Confirm beliefs").click().run()
             self.assertFalse(app.exception)
-            run = app.session_state[f"{prefix}:1.0:mock-source:beliefs"]["run"]
-            self.assertEqual(self.store.belief_reviews(run["run_id"])[0]["values"], {"low": 0.4, "high": 0.4, "unknown": 0.2})
+            run = app.session_state[f"{prefix}:1.0:mock-source:beliefs"]["comparison_direct"]
+            self.assertEqual(self.store.belief_reviews(run["run_id"])[0]["values"], {"low": 0.2, "high": 0.6, "unknown": 0.2})
             self.request.assert_called_once()
 
 

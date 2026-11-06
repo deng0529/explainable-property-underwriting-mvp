@@ -38,6 +38,12 @@ def assemble_snapshot(case, store):
         raise ValueError('Calculate and save the current overall BRB assessment first.')
     evidence_reviews = store.reviews(evidence_id)
     belief_reviews = store.belief_reviews(proposal_id)
+    direct_confirmed={}
+    if provenance:
+        for event in belief_reviews:
+            if (event.get('confirmed') and event.get('run_id')==proposal_id and event.get('case_id')==case['case_id']
+                    and event.get('source_hash')==digest and event.get('reviewed_hash')==reviewed_hash):
+                direct_confirmed[event['attribute_id']]=copy.deepcopy(event['values'])
     intake_reviews = store.review_history(case, intake)
     def metadata(run):
         return {key: copy.deepcopy(run[key]) for key in ('run_id', 'case_id', 'source_version', 'source_hash', 'status', 'finished_at', 'prompt', 'prompts', 'model', 'configuration', 'decision_model', 'policy_version', 'schema_version', 'engine_version', 'rule_configuration', 'attribute_configuration_hash', 'assessment_settings_hash') if key in run}
@@ -50,7 +56,7 @@ def assemble_snapshot(case, store):
                 'submission': {'metadata': metadata(intake), 'extraction_and_screening': copy.deepcopy(intake['result']),
                                'outcome': screening['outcome'], 'screening_resolution': screening, 'validation_issues': intake.get('validation_issues', []), 'human_reviews': intake_reviews},
                 'evidence': {'metadata': metadata(evidence), 'ai_original': copy.deepcopy(evidence['result']), 'human_reviewed': reviewed, 'review_events': evidence_reviews},
-                'beliefs': {'metadata': metadata(proposal), 'ai_proposals': copy.deepcopy(proposal['result']), 'human_confirmed': {} if provenance else confirmed, 'review_events': belief_reviews},
+                'beliefs': {'metadata': metadata(proposal), 'ai_proposals': copy.deepcopy(proposal['result']), 'human_confirmed': direct_confirmed if provenance else confirmed, 'review_events': belief_reviews},
                 'er': copy.deepcopy(er), 'brb': copy.deepcopy(brb), 'upstream_record_references': references,
                 'completion': {'submission': intake['status'], 'screening': screening['outcome'], 'submission_review': intake_reviews[0]['status'] if intake_reviews else 'Not reviewed yet',
                                'evidence': 'Human reviewed', 'beliefs': 'Direct AI inputs — not human confirmed' if provenance else 'Human confirmed', 'er': 'Current saved result', 'brb': 'Current saved result'}}

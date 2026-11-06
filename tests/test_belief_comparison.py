@@ -335,11 +335,31 @@ class ComparisonTests(unittest.TestCase):
         self.a.assert_called_once();self.b.assert_called_once()
         low=next(n for n in app.number_input if n.label=='Human Low');self.assertFalse(low.disabled)
         low.set_value(.3).run()
+        next(n for n in app.number_input if n.label=='Human High').set_value(.4).run()
         next(n for n in app.text_area if n.label=='Reason for belief edits').set_value('Reviewed independently by underwriter').run()
         next(n for n in app.checkbox if n.label=='Confirm this attribute assessment').set_value(True).run()
         next(n for n in app.button if n.label=='Confirm beliefs').click().run()
         self.assertFalse(app.exception)
-        self.assertEqual(self.store.belief_reviews(canonical['run_id'])[-1]['values'],{'low':.3,'high':.4,'unknown':.3})
+        self.assertEqual(self.store.belief_reviews(result['direct']['run_id'])[-1]['values'],{'low':.3,'high':.4,'unknown':.3})
+        self.run_pair();self.a.assert_called_once();self.b.assert_called_once()
+
+    def test_confirmations_follow_current_direct_run_and_reload_without_gpt(self):
+        from underwriting.ui.beliefs import current_confirmation_view,confirmed_for
+        canonical=self.f.run_action()
+        old=confirm_belief(self.settings,self.case,self.store,canonical,'F1','accept')
+        pair=self.run_pair()
+        view={'run':canonical,'reviews':[old],'comparison_direct':pair['direct'],'settings':self.settings,
+              'comparison_snapshot_hash':pair['snapshot_hash'],'comparison_reviewed_snapshot_hash':self.snapshot['upstream']['reviewed_snapshot_hash']}
+        current=current_confirmation_view(view)
+        self.assertIsNone(confirmed_for(current,'F1'))
+        self.assertEqual(current['run']['run_id'],pair['direct']['run_id'])
+        event=confirm_belief(self.settings,self.case,self.store,current['run'],'F1','accept')
+        self.assertEqual(event['values'],{'low':.2,'high':.6,'unknown':.2})
+        self.assertEqual(event['proposal_method'],'direct_ai')
+        view['direct_review_events']={pair['direct']['run_id']:self.store.belief_reviews(pair['direct']['run_id'])}
+        loaded=current_confirmation_view(view)
+        self.assertEqual(confirmed_for(loaded,'F1')['event_id'],event['event_id'])
+        self.assertEqual(self.store.belief_reviews(canonical['run_id']),[old])
         self.run_pair();self.a.assert_called_once();self.b.assert_called_once()
 
     def test_ui_compares_new_methods_and_keeps_confirmation_canonical(self):

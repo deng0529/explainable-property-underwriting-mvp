@@ -6,7 +6,7 @@ from underwriting.ui.diagnostics import source_label
 from underwriting.configuration.access import comparison_available, local_comparison_settings
 from underwriting.assessment.score_service import compare_beliefs, propose_method, pending_comparisons, retry_comparison_save, method_identity, latest, revalidate_score_response
 from underwriting.assessment.comparison_context import freeze_context
-from underwriting.ui.score_comparison import render_comparison
+from underwriting.ui.score_comparison import render_comparison, method_stale
 from underwriting.assessment.belief_service import reviewed_snapshot_hash
 
 from underwriting.configuration.settings import get_config, configuration_metadata
@@ -86,6 +86,9 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                 elif get_config()['belief_comparison']['enabled']:
                     compared=compare_beliefs(generation_settings,case,generation_store,progress=report,context=frozen)
                     result=compared['canonical']
+                    direct=compared['direct']
+                    if direct and direct.get('status')=='completed':
+                        view.setdefault('direct_review_events',{})[direct['run_id']]=store.belief_reviews(direct['run_id'])
                     view.update(comparison_direct=compared['direct'],score_run=compared['score'],score_error=compared['score_error'],
                                 canonical_error=compared['canonical_error'],comparison_input=compared['input_snapshot'],
                                 comparison_reviewed_snapshot_hash=compared['input_snapshot']['upstream']['reviewed_snapshot_hash'],
@@ -94,7 +97,7 @@ def belief_controls(case, prefix, evidence_view, button_slot=None):
                     result=propose_beliefs(settings,case,store,expected_run=expected,progress=report,reviewed_input=frozen)
                 if result is None:
                     activate_stage(st.session_state,prefix,'Beliefs')
-                    status.update(label='Comparison loaded · canonical confirmation proposal unavailable',state='complete',expanded=False)
+                    status.update(label='Comparison loaded · review current Direct AI beliefs below',state='complete',expanded=False)
                     return
                 from underwriting.ui.diagnostics import remember
                 remember(view,"Beliefs",result,source="generated_response" if used_gpt else "saved_database_result")
@@ -237,38 +240,54 @@ def display_distribution(label, values):
         column.text(f"{values[name]:.2f}" if values else "—")
 
 
+def current_confirmation_view(view):
+    """Confirm the displayed Direct AI run, never an unrelated older proposal."""
+    if not get_config()['belief_comparison']['enabled']:return view
+    direct=view.get('comparison_direct')
+    if not direct or direct.get('status')!='completed' or method_stale(view,direct,'direct'):
+        return dict(view,run=None,reviews=[],stale=bool(direct))
+    events=view.setdefault('direct_review_events',{}).setdefault(direct['run_id'],[])
+    run=dict(direct,assessment_settings=dict(get_config()['belief_assessment']))
+    return dict(view,run=run,reviews=events,stale=False)
+
+
 def belief_details(view, identifier):
+    comparison_view=view
+    view=current_confirmation_view(view)
     proposal = proposal_for(view, identifier)
     event = confirmed_for(view, identifier)
     if get_config()["belief_comparison"]["enabled"]:
-        render_comparison(view,identifier,proposal)
+        render_comparison(comparison_view,identifier,proposal)
     else:
         display_distribution("AI-proposed beliefs", proposal)
     display_distribution("Human-confirmed beliefs", event["values"] if event else None)
-    st.caption(belief_status(view, identifier))
+    st.caption(("Confirmed for the current Direct AI proposal" if event else "Not confirmed for the current Direct AI proposal") if get_config()["belief_comparison"]["enabled"] else belief_status(view, identifier))
+    if get_config()["belief_comparison"]["enabled"] and not authorised(local_comparison_settings(view["settings"])):
+        st.caption("Public Cloud is read-only. Confirm or edit the current proposal in the local owner app, then reload here.")
     if not proposal:
         return
     if not get_config()["belief_comparison"]["enabled"]:
         st.text(proposal["assessment_summary"])
-    with st.expander("Previous proposal justification and concerns"):
-        for key, label in (("low_support", "Low support"), ("high_support", "High support"), ("unknown_basis", "Unknown basis")):
-            st.markdown("**" + label + "**")
-            st.text(proposal[key]["explanation"])
-            st.caption("Evidence IDs: " + ", ".join(proposal[key]["evidence_ids"]) + " · Gap IDs: " + ", ".join(proposal[key].get("gap_ids", [])))
-        st.markdown("**Important concerns**")
-        for value in proposal["important_concerns"]:
-            st.text(value)
-        st.markdown("**Clarification questions**")
-        for value in proposal["clarification_questions"]:
-            st.text(value)
-        if proposal["protection_aspect_findings"]:
-            st.dataframe(proposal["protection_aspect_findings"], hide_index=True, alt="F3 compartmentation, detection and suppression findings without subattribute scores")
+    if not get_config()["belief_comparison"]["enabled"]:
+        with st.expander("Previous proposal justification and concerns"):
+            for key, label in (("low_support", "Low support"), ("high_support", "High support"), ("unknown_basis", "Unknown basis")):
+                st.markdown("**" + label + "**")
+                st.text(proposal[key]["explanation"])
+                st.caption("Evidence IDs: " + ", ".join(proposal[key]["evidence_ids"]) + " · Gap IDs: " + ", ".join(proposal[key].get("gap_ids", [])))
+            st.markdown("**Important concerns**")
+            for value in proposal["important_concerns"]:
+                st.text(value)
+            st.markdown("**Clarification questions**")
+            for value in proposal["clarification_questions"]:
+                st.text(value)
+            if proposal["protection_aspect_findings"]:
+                st.dataframe(proposal["protection_aspect_findings"], hide_index=True, alt="F3 compartmentation, detection and suppression findings without subattribute scores")
     review_settings = local_comparison_settings(view["settings"])
     owner = authorised(review_settings)
     run = view["run"]
     key = f"{run['run_id']}:{identifier}:human_belief"
     comparison = get_config()["belief_comparison"]["enabled"]
-    modes = (["Keep current confirmed beliefs", "Edit Low and High"] if event else ["Edit Low and High"]) if comparison else ["Accept AI proposal", "Edit Low and High"]
+    modes = (["Keep current confirmed beliefs", "Confirm Direct AI beliefs", "Edit Low and High"] if event else ["Confirm Direct AI beliefs", "Edit Low and High"]) if comparison else ["Accept AI proposal", "Edit Low and High"]
     if st.session_state.get(key + ":mode") not in modes:st.session_state.pop(key + ":mode",None)
     mode = st.radio("Human assessment", modes, index=len(modes)-1 if comparison else 0, disabled=not owner, key=key + ":mode", persist_state="session")
     baseline = event["values"] if event else proposal
@@ -286,7 +305,7 @@ def belief_details(view, identifier):
         try:
             review_store = BeliefStore(review_settings) if review_settings is not view["settings"] else view["store"]
             saved = confirm_belief(review_settings, view["case"], review_store, run, identifier,
-                                  "accept" if mode == "Accept AI proposal" else "edit", low, high, reason)
+                                  "accept" if mode in {"Accept AI proposal","Confirm Direct AI beliefs"} else "edit", low, high, reason)
             view["reviews"].append(saved)
             st.rerun()
         except (ValueError, OSError, PermissionError, StoreError) as error:
