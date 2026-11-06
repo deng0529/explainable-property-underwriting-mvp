@@ -245,8 +245,8 @@ def belief_details(view, identifier):
     else:
         display_distribution("AI-proposed beliefs", proposal)
     if get_config()["belief_comparison"]["enabled"]:
-        st.caption("Existing confirmation workflow below uses the canonical proposal, not either experimental comparison output.")
-        display_distribution("Canonical proposal for confirmation",proposal)
+        st.caption("Your existing proposal and human confirmations below are used for ER/BRB. The comparison above does not change them.")
+        display_distribution("Existing proposal for human review",proposal)
     display_distribution("Human-confirmed beliefs", event["values"] if event else None)
     st.caption(belief_status(view, identifier))
     if not proposal:

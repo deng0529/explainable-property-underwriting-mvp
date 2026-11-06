@@ -1,3 +1,5 @@
+Explicit **Load proposed beliefs** now revalidates a retained failed score response before returning the old failure. A valid response is recovered and saved without GPT; remaining validation errors are displayed without generation. The existing confirmation proposal is labelled in plain language.
+
 Comparison support correction (6 November): Low, High and Unknown support are
 labelled separately. Score interpolation may produce nonzero Low and High without
 separate findings in both directions; an assessable score still requires valid

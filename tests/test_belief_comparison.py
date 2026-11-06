@@ -81,7 +81,7 @@ class ComparisonTests(unittest.TestCase):
             pair=self.run_pair()
         failed=pair['score'];self.assertEqual(failed['status'],'failed')
         with patch.object(service,'structured_request',side_effect=AssertionError('No GPT call')):
-            recovered=service.revalidate_score_response(self.settings,self.case,self.store,failed)
+            recovered=self.run_pair()['score']
         self.assertEqual(recovered['status'],'completed')
         self.assertNotEqual(recovered['run_id'],failed['run_id'])
         self.assertEqual(recovered['recovered_from_run_id'],failed['run_id'])

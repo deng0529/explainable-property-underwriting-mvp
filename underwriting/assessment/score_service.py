@@ -166,7 +166,14 @@ def propose_method(settings,case,store,snapshot,method,request=None,progress=Non
         previous=latest(store,case,snapshot,method,key,successful=False)
         if regenerate and (not confirmed or (previous['run_id'] if previous else None)!=expected_run):
             raise PermissionError('Explicitly confirm this method retry against its current attempt.')
-        if previous and not regenerate:return dict(previous,result_source='database')
+        if previous and not regenerate:
+            if method=='score' and previous.get('status')=='failed' and previous.get('response_text'):
+                # The explicit Load action can recover an already-paid response.
+                # A validation error remains a failure, never a generation fallback.
+                try:return dict(revalidate_score_response(settings,case,store,previous),result_source='retained_response')
+                except ValueError as error:
+                    return dict(previous,result_source='database',validation_errors=[str(error)])
+            return dict(previous,result_source='database')
         retained=[v for v in pending_comparisons(case,snapshot['source']['source_hash'],method) if v.get('cache_key')==key]
         if retained:return dict(retained[-1],result_source='retained_response',save_pending=True)
         generation_allowed(settings,request is not None)
