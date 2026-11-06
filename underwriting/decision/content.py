@@ -2,7 +2,7 @@
 from decimal import Decimal
 from underwriting.assessment.belief_service import content_hash
 
-VERSION='decision-content-v1'
+VERSION='decision-content-v2'
 AUDIT_KEYS={'run_id','event_id','evidence_run_id','belief_run_id','er_run_id','created_at','finished_at','started_at',
             'reviewed_hash','input_belief_hash','er_result_hash','source_version','reviewer','reviewer_name','reviewer_context'}
 
@@ -61,6 +61,15 @@ def review_content(snapshot):
             'brb':{'result':brb['result'],'engine':brb['engine_version'],'model':brb['decision_model_snapshot']}}
 
     if beliefs.get('input_method')=='direct_ai':
+        # Confirming unchanged AI values adds audit history, not new assessment facts.
+        # Keep different values and meaningful review notes material to reuse.
+        inputs=beliefs['calculation_inputs']
+        reviews=latest_material_reviews(beliefs.get('review_events',[]),('values','reason','confirmed'))
+        substantive={key:value for key,value in reviews.items()
+                     if value.get('values')!=inputs.get(key) or str(value.get('reason') or '').strip()}
+        result['beliefs']['confirmed']={key:value for key,value in beliefs['human_confirmed'].items()
+                                        if value!=inputs.get(key) or key in substantive}
+        result['beliefs']['human_reasons']=substantive
         result['beliefs'].update(input_method='direct_ai',calculation_inputs=beliefs['calculation_inputs'],
             input_provenance={k:v for k,v in beliefs['input_provenance'].items() if k!='belief_run_id'})
     return result

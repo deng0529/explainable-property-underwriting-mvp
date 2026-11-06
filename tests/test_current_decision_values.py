@@ -1,5 +1,6 @@
 """Current Direct AI -> ER -> BRB -> Decision/overview, temporary storage only."""
 import copy
+from dataclasses import replace
 import json
 import unittest
 from unittest.mock import Mock,patch
@@ -65,6 +66,35 @@ class CurrentDecisionTests(unittest.TestCase):
         self.assertEqual(snapshot['beliefs']['human_confirmed']['F1'],event['values'])
         self.assertEqual(snapshot['beliefs']['calculation_inputs']['F1'],{'low':.2,'high':.6,'unknown':.2})
         self.assertEqual(snapshot['er']['run_id'],er['run_id'])
+
+    def test_cloud_reuses_review_after_identical_human_confirmations(self):
+        from underwriting.assessment.belief_service import confirm_belief
+        from underwriting.decision.service import load_generate
+        pair,er,brb=self.prepare();first,_=self.f.generate()
+        run=dict(pair['direct'],assessment_settings=dict(get_config()['belief_assessment']))
+        for row in run['result']['assessments']:
+            confirm_belief(self.settings,self.case,self.store,run,row['attribute_id'],'accept')
+        readonly=replace(self.settings,api_key='',service_mode='turso_readonly',access_mode='public_readonly')
+        before=self.store.db.total_changes;execute=self.store.execute
+        def select_only(sql,args=(),missing_ok=False):
+            self.assertTrue(sql.startswith('SELECT '));return execute(sql,args,missing_ok)
+        with patch.object(self.store,'execute',side_effect=select_only),patch('underwriting.decision.service.structured_request',side_effect=AssertionError('No GPT')):
+            loaded,origin=load_generate(readonly,self.case,self.store)
+        self.assertEqual(loaded['review_run_id'],first['review_run_id'])
+        self.assertIn('no GPT',origin);self.assertEqual(before,self.store.db.total_changes)
+        self.f.request.assert_called_once()
+
+    def test_changed_human_values_or_notes_do_not_reuse_old_review(self):
+        from underwriting.assessment.belief_service import confirm_belief
+        from underwriting.decision.service import load_generate,SavedReviewUnavailableError
+        pair,er,brb=self.prepare();self.f.generate()
+        run=dict(pair['direct'],assessment_settings=dict(get_config()['belief_assessment']))
+        confirm_belief(self.settings,self.case,self.store,run,'F1','edit',.3,.4,'A material underwriter observation')
+        readonly=replace(self.settings,api_key='',service_mode='turso_readonly',access_mode='public_readonly')
+        with patch('underwriting.decision.service.structured_request',side_effect=AssertionError('No GPT')):
+            with self.assertRaisesRegex(SavedReviewUnavailableError,'database is connected'):
+                load_generate(readonly,self.case,self.store)
+        self.f.request.assert_called_once()
 
     def test_missing_current_direct_blocks_before_decision_gpt(self):
         with self.assertRaisesRegex(ValueError,'Direct AI'):self.f.generate()

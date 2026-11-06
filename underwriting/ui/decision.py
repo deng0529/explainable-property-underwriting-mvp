@@ -11,7 +11,7 @@ from underwriting.configuration.access import local_comparison_settings
 from underwriting.persistence.decision import DecisionStore
 from underwriting.persistence.intake import StoreError
 from underwriting.decision.schema import ACTIONS, validate_screening_narrative
-from underwriting.decision.service import load_generate, retry_save, pending, save_decision, export_report, export_historical_report, export_current_report, latest_content_attempt
+from underwriting.decision.service import load_generate, retry_save, pending, save_decision, export_report, export_historical_report, export_current_report, latest_content_attempt, SavedReviewUnavailableError
 from underwriting.decision.content import same_review_content
 from underwriting.decision.snapshot import assemble_snapshot, snapshot_hash, DecisionPrerequisiteError
 
@@ -139,6 +139,9 @@ def render_decision(case, prefix):
                         status.write(issue)
                     if view['run']:
                         view['stale'] = not same_review_content(assemble_snapshot(case,store),view['run']['input_snapshot'])
+        except SavedReviewUnavailableError as error:
+            view['blocked']=str(error)
+            st.warning(str(error))
         except DecisionPrerequisiteError as error:
             status.update(label='Prerequisites incomplete · no GPT request made', state='error', expanded=False)
             from underwriting.ui.diagnostics import remember

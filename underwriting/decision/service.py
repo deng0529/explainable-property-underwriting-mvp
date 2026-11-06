@@ -90,6 +90,10 @@ def retry_save(settings, store, run):
     return run
 
 
+class SavedReviewUnavailableError(PermissionError):
+    """A read-only lookup succeeded but no current saved review matched."""
+
+
 def review_matches_settings(run,settings):
     definition=get_config()['prompts']['decision_review']
     prompt_hash=content_hash({'system':definition['system'],'template':definition['template']})
@@ -168,7 +172,9 @@ def load_generate(settings, case, store, *, regenerate=False, confirmed=False, e
             # Read-only viewers fetch the saved PDF on download, not before the
             # review appears. This avoids another complete upstream scan here.
             return saved, 'Turso database · no GPT call'
-        require_owner(settings)
+        try:require_owner(settings)
+        except PermissionError:
+            raise SavedReviewUnavailableError('The database is connected, but no saved Decision review matches the current assessment inputs and review settings. In the local owner app, load the current beliefs and ER/BRB results, then Load / Generate decision review once to save it. Reload here afterwards. No GPT request or database write was made.') from None
         if regenerate and not confirmed:
             raise PermissionError('Confirm the paid decision-review regeneration request.')
         previous = latest_content_attempt(case,store,snapshot)

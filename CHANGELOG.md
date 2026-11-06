@@ -1,3 +1,5 @@
+Fixed Cloud Decision review reuse after unchanged human confirmations. Preserved material edit/note invalidation and added an actionable read-only cache-miss message. Verified the existing Turso review loads using SELECT-only queries, with GPT disabled.
+
 Corrected V2 human confirmation linkage: show/edit confirmations for the current Direct AI run, preserve older reviews, and load newly saved current confirmations on Cloud. No AI output is automatically marked human-confirmed.
 
 V2 update — 6 November 2026: method comparison tabs with shared identical evidence details; editable local human belief reviews; YAML-selected Direct AI inputs for saved-first ER/BRB calculations; consistent current values in Decision, PDF reports and System overview; configuration-aware Decision review reuse. Public Cloud remains read-only. Verified with 206 mocked/temporary-storage regression tests; no paid calls or live writes during development.
